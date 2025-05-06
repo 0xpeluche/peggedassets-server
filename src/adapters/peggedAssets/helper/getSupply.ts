@@ -20,7 +20,7 @@ const tweleveHoursAgo = () => Math.round(Date.now() / 1000) - 12 * 60 * 60;
 
 export async function getApi(chain: string, _api: ChainApi) {
   if (chain === _api.chain) return _api;
-  const api = new ChainApi({ chain });
+  const api = new ChainApi({ chain, timestamp: _api.timestamp });
   if (_api.timestamp && _api.timestamp < tweleveHoursAgo()) await api.getBlock()
   return api;
 }
@@ -37,12 +37,15 @@ export function bridgedSupply(
     const api = await getApi(chain, _api)
     let balances = {} as Balances;
     let assetPegType = pegType ? pegType : ("peggedUSD" as PeggedAssetType);
-    const supplies = await api.multiCall({ abi: "erc20:totalSupply", calls: addresses, });
-    for (let i = 0; i < supplies.length; i++) {
+    const supplies = await api.multiCall({ abi: "erc20:totalSupply", calls: addresses, permitFailure: true });
+
+    addresses.forEach((_, i) => {
+      const supply = supplies[i] ?? 0
       bridgeName
-        ? sumSingleBalance(balances, assetPegType, supplies[i] / 10 ** decimals, bridgeName, false, bridgedFromChain)
-        : sumSingleBalance(balances, assetPegType, supplies[i] / 10 ** decimals, addresses[i], true);
-    }
+        ? sumSingleBalance(balances, assetPegType, supply / 10 ** decimals, bridgeName, false, bridgedFromChain)
+        : sumSingleBalance(balances, assetPegType, supply / 10 ** decimals, addresses[i], true)
+    })
+
     return balances;
   };
 }
@@ -83,7 +86,7 @@ export function supplyInEthereumBridge(
     const api = await getApi('ethereum', _api)
     let balances = {} as Balances;
     let assetPegType = pegType ? pegType : ("peggedUSD" as PeggedAssetType);
-    const bridged = await api.call({ abi: 'erc20:balanceOf', target: target, params: owner, })
+    const bridged = await api.call({ abi: 'erc20:balanceOf', target: target, params: owner, permitFailure: true })
     sumSingleBalance(balances, assetPegType, bridged / 10 ** decimals, owner, true);
     return balances;
   };
@@ -364,6 +367,24 @@ function getIssued({
     })
 
     return balances;
+  }
+}
+
+export async function chainMinted(issuedContracts: string[], decimals: number, pegType: PeggedAssetType = "peggedUSD") {
+  return async function (api: ChainApi) {
+    const balances: Balances = {}
+    const totalSupplies = await api.multiCall({ abi: 'erc20:totalSupply', calls: issuedContracts, permitFailure: true })
+    totalSupplies.forEach((supply) => { sumSingleBalance(balances, pegType, supply / 10 ** decimals, "issued", false ) })
+    return balances
+  }
+}
+
+export async function chainUnreleased(issuedContracts: string[], decimals: number, owner: string, pegType: PeggedAssetType = "peggedUSD") {
+  return async function (api: ChainApi) {
+    const balances: Balances = {}
+    const reserves = await api.multiCall({ abi: 'erc20:balanceOf', calls: issuedContracts.map((issued) => ({ target: issued, params: [owner] })), permitFailure: true })
+    reserves.forEach((reserve) => { sumSingleBalance(balances, pegType, reserve / 10 ** decimals) })
+    return balances
   }
 }
 

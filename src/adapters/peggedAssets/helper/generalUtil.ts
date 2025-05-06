@@ -1,9 +1,9 @@
+import { ChainApi } from "@defillama/sdk";
+import bridgeMapping, { BridgeID } from "../../../peggedData/bridgeData";
 import type {
   Balances,
-  PeggedAssetType,
-  ChainBlocks,
+  PeggedAssetType
 } from "../peggedAsset.type";
-import bridgeMapping, { BridgeID } from "../../../peggedData/bridgeData";
 
 export function sumSingleBalance(
   balances: Balances,
@@ -76,14 +76,12 @@ export async function sumMultipleBalanceFunctions(
   pegType: PeggedAssetType
 ) {
   return async function (
-    timestamp: number,
-    ethBlock: number,
-    chainBlocks: ChainBlocks
+    api: ChainApi
   ) {
     let balances = {} as Balances;
     for (let fnPromise of functions) {
       const fn = await fnPromise;
-      const balance = await fn(timestamp, ethBlock, chainBlocks);
+      const balance = await fn(api);
       mergeBalances(balances, pegType, balance);
     }
     return balances;

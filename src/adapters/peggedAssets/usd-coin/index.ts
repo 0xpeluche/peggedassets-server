@@ -1,42 +1,31 @@
 const sdk = require("@defillama/sdk");
+import { lookupAccountByID } from "../helper/algorand";
+import { getTotalSupply as aptosGetTotalSupply } from "../helper/aptos";
+import {
+  sumMultipleBalanceFunctions,
+  sumSingleBalance
+} from "../helper/generalUtil";
+import { bridgedSupply, chainMinted, chainUnreleased, cosmosSupply, kujiraSupply, osmosisSupply, solanaMintedOrBridged, supplyInArbitrumBridge, supplyInEthereumBridge, terraSupply } from "../helper/getSupply";
+import { getTotalSupply as kavaGetTotalSupply } from "../helper/kava";
+import { mixinSupply } from "../helper/mixin";
+import { call as nearCall } from "../helper/near";
+import {
+  getBalance as ontologyGetBalance,
+  getTotalSupply as ontologyGetTotalSupply,
+} from "../helper/ontology";
 import { getTokenBalance as solanaGetTokenBalance } from "../helper/solana";
 import * as sui from "../helper/sui";
 import {
-  sumSingleBalance,
-  sumMultipleBalanceFunctions,
-} from "../helper/generalUtil";
-import {
-  bridgedSupply,
-  supplyInEthereumBridge,
-  solanaMintedOrBridged,
-  terraSupply,
-  cosmosSupply,
-  kujiraSupply,
-  osmosisSupply,
-  getApi,
-  supplyInArbitrumBridge
-} from "../helper/getSupply";
-import {
-  getTotalSupply as ontologyGetTotalSupply,
-  getBalance as ontologyGetBalance,
-} from "../helper/ontology";
-import { getTotalSupply as kavaGetTotalSupply } from "../helper/kava";
-import { getTotalSupply as aptosGetTotalSupply } from "../helper/aptos";
-import { call as nearCall } from "../helper/near";
-import {
-  ChainBlocks,
-  PeggedIssuanceAdapter,
-  Balances,  ChainContracts,PeggedAssetType
-} from "../peggedAsset.type";
-import {
   getTotalSupply as tronGetTotalSupply, // NOTE THIS DEPENDENCY
 } from "../helper/tron";
-import { mixinSupply } from "../helper/mixin";
+import {
+  Balances,
+  ChainBlocks,
+  PeggedIssuanceAdapter
+} from "../peggedAsset.type";
 import { chainContracts } from "./config";
-import { lookupAccountByID } from "../helper/algorand";
 const axios = require("axios");
 const retry = require("async-retry");
-import { ChainApi } from "@defillama/sdk";
 
 // If you are trying to test the adapter locally and it failed, try to comment out the lines related with dogechain and fuse
 
@@ -63,56 +52,6 @@ Juno, Crescent: missing Axelar bridged, no simple API to use, maybe can use axel
 
 Sifchain: not sure where it's coming from/how to track
 */
-
-async function chainMinted(chain: string, decimals: number) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
-    let balances = {} as Balances;
-    for (let issued of chainContracts[chain].issued) {
-      const totalSupply = (
-        await sdk.api.abi.call({
-          abi: "erc20:totalSupply",
-          target: issued,
-          block: _chainBlocks?.[chain],
-          chain: chain,
-        })
-      ).output;
-      sumSingleBalance(
-        balances,
-        "peggedUSD",
-        totalSupply / 10 ** decimals,
-        "issued",
-        false
-      );
-    }
-    return balances;
-  };
-}
-
-async function chainUnreleased(chain: string, decimals: number, owner: string) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
-    let balances = {} as Balances;
-    for (let issued of chainContracts[chain].issued) {
-      const reserve = (
-        await sdk.api.erc20.balanceOf({
-          target: issued,
-          owner: owner,
-          block: _chainBlocks?.[chain],
-          chain: chain,
-        })
-      ).output;
-      sumSingleBalance(balances, "peggedUSD", reserve / 10 ** decimals);
-    }
-    return balances;
-  };
-}
 
 async function solanaUnreleased() {
   return async function (
@@ -503,31 +442,19 @@ async function flowBridged(address: string, decimals: number) {
 
 const adapter: PeggedIssuanceAdapter = {
   ethereum: {
-    minted: chainMinted("ethereum", 6),
-    unreleased: chainUnreleased(
-      "ethereum",
-      6,
-      chainContracts.ethereum.unreleased[0]
-    ),
-    solana: bridgedSupply(
-      "ethereum",
-      6,
-      chainContracts.ethereum.bridgedFromSol
-    ),
-    polygon: bridgedSupply(
-      "ethereum",
-      6,
-      chainContracts.ethereum.bridgedFromPolygon
-    ),
+    minted: chainMinted(chainContracts.ethereum.issued, 6),
+    unreleased: chainUnreleased(chainContracts.ethereum.issued, 6 ,chainContracts.ethereum.unreleased[0]),
+    // solana: bridgedSupply(
+    //   "ethereum",
+    //   6,
+    //   chainContracts.ethereum.bridgedFromSol
+    // ),
+    polygon: bridgedSupply("ethereum", 6, chainContracts.ethereum.bridgedFromPolygon),
     bsc: bridgedSupply("ethereum", 18, chainContracts.ethereum.bridgedFromBSC),
   },
   polygon: {
-    minted: chainMinted("polygon", 6),
-    ethereum: bridgedSupply(
-      "polygon",
-      6,
-      chainContracts.polygon.bridgedFromETH
-    ),
+    minted: chainMinted(chainContracts.polygon.issued, 6),
+    ethereum: bridgedSupply("polygon", 6, chainContracts.polygon.bridgedFromETH),
     solana: bridgedSupply("polygon", 6, chainContracts.polygon.bridgedFromSol),
   },
   solana: {
@@ -553,7 +480,7 @@ const adapter: PeggedIssuanceAdapter = {
     avax: bridgedSupply("bsc", 6, chainContracts.bsc.bridgedFromAvax),
   },
   avax: {
-    minted: chainMinted("avax", 6),
+    minted:chainMinted(chainContracts.avax.issued, 6),
     ethereum: bridgedSupply("avax", 6, chainContracts.avax.bridgedFromETH),
     solana: bridgedSupply("avax", 6, chainContracts.avax.bridgedFromSol),
     bsc: bridgedSupply("avax", 18, chainContracts.avax.bridgedFromBSC),
@@ -569,16 +496,12 @@ const adapter: PeggedIssuanceAdapter = {
   },
   */
   arbitrum: {
-    minted: chainMinted("arbitrum", 6),
+    minted: chainMinted(chainContracts.arbitrum.issued, 6),
     unreleased: async () => ({}),
-    ethereum: bridgedSupply(
-      "arbitrum",
-      6,
-      chainContracts.arbitrum.bridgedFromETH
-    ),
+    ethereum: bridgedSupply("arbitrum", 6, chainContracts.arbitrum.bridgedFromETH),
   },
   era: {
-    minted: chainMinted("era", 6),
+    minted: chainMinted(chainContracts.era.issued, 6),
     unreleased: async () => ({}),
     ethereum: bridgedSupply("era", 6, chainContracts.era.bridgedFromETH),
   },
@@ -616,12 +539,8 @@ const adapter: PeggedIssuanceAdapter = {
     ethereum: bridgedSupply("boba", 6, chainContracts.boba.bridgedFromETH),
   },
   optimism: {
-    minted: chainMinted("optimism", 6),
-    ethereum: bridgedSupply(
-      "optimism",
-      6,
-      chainContracts.optimism.bridgedFromETH
-    ),
+    minted: chainMinted(chainContracts.optimism.issued, 6),
+    ethereum: bridgedSupply("optimism", 6, chainContracts.optimism.bridgedFromETH),
   },
   metis: {
     ethereum: bridgedSupply("metis", 6, chainContracts.metis.bridgedFromETH),
@@ -752,7 +671,7 @@ const adapter: PeggedIssuanceAdapter = {
     ethereum: bridgedSupply("dfk", 18, chainContracts.dfk.bridgedFromETH),
   },
   celo: {
-    minted: chainMinted("celo",6),
+    minted: chainMinted(chainContracts.celo.issued, 6),
     ethereum: sumMultipleBalanceFunctions(
       [
         bridgedSupply("celo", 6, chainContracts.celo.bridgedFromETH6Decimals),
@@ -855,7 +774,7 @@ const adapter: PeggedIssuanceAdapter = {
     ),
   },
   base: {
-    minted: chainMinted("base", 6),
+    minted: chainMinted(chainContracts.base.issued, 6),
     ethereum: bridgedSupply("base", 6, chainContracts.base.bridgedFromETH),
   },
   kujira: {
@@ -953,7 +872,7 @@ const adapter: PeggedIssuanceAdapter = {
     ethereum: bridgedSupply("soneium", 6, chainContracts.soneium.bridgedFromETH),
   },
   unichain: {
-    minted: chainMinted("unichain", 6),
+    minted: chainMinted(chainContracts.unichain.issued, 6),
   },
   superposition: {
     ethereum: bridgedSupply("spn", 6, chainContracts.superposition.bridgedFromETH),

@@ -1,28 +1,30 @@
 const sdk = require("@defillama/sdk");
+import { ChainApi } from "@defillama/sdk";
 import {
   sumMultipleBalanceFunctions,
   sumSingleBalance,
 } from "../helper/generalUtil";
 import {
   bridgedSupply,
-  supplyInEthereumBridge,
-  solanaMintedOrBridged,
-  terraSupply,
+  chainMinted,
   osmosisSupply,
+  solanaMintedOrBridged,
+  supplyInEthereumBridge,
+  terraSupply,
 } from "../helper/getSupply";
-import {
-  getTotalSupply as ontologyGetTotalSupply,
-  getBalance as ontologyGetBalance,
-} from "../helper/ontology";
 import { getTotalSupply as kavaGetTotalSupply } from "../helper/kava";
+import { mixinSupply } from "../helper/mixin";
 import { call as nearCall } from "../helper/near";
 import {
-  ChainBlocks,
-  PeggedIssuanceAdapter,
+  getBalance as ontologyGetBalance,
+  getTotalSupply as ontologyGetTotalSupply,
+} from "../helper/ontology";
+import {
   Balances,
-  PeggedAssetType,  ChainContracts,
+  ChainBlocks,
+  PeggedAssetType,
+  PeggedIssuanceAdapter
 } from "../peggedAsset.type";
-import { mixinSupply } from "../helper/mixin";
 import { chainContracts } from "./config";
 const axios = require("axios");
 const retry = require("async-retry");
@@ -43,52 +45,44 @@ Conflux: don't know how to get calls to work. 0x74eaE367d018A5F29be559752e4B67d0
 Evmos: can't find multichain contract, no liquidity on dexes.
 */
 
-async function chainMinted(chain: string, decimals: number) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
-    let balances = {} as Balances;
-    for (let issued of chainContracts[chain].issued) {
-      const totalSupply = (
-        await sdk.api.abi.call({
-          abi: "erc20:totalSupply",
-          target: issued,
-          block: _chainBlocks?.[chain],
-          chain: chain,
-        })
-      ).output;
-      const dsr = (
-        await sdk.api.abi.call({
-          abi: {
-            constant: true,
-            inputs: [{ internalType: "address", name: "", type: "address" }],
-            name: "dai",
-            outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-            payable: false,
-            stateMutability: "view",
-            type: "function",
-          },
-          target: "0x35d1b3f3d7966a1dfe207aa4514c12a259a0492b",
-          block: _chainBlocks?.[chain],
-          chain: chain,
-          params: ["0x197E90f9FAD81970bA7976f33CbD77088E5D7cf7"],
-        })
-      ).output;
-      sumSingleBalance(
-        balances,
-        "peggedUSD",
-        (Number(totalSupply) + dsr / 1e27) / 10 ** decimals,
-        "issued",
-        false
-      );
-    }
-    return balances;
-  };
-}
+// async function chainMinted(api:ChainApi, decimals: number) {
+//   let balances = {} as Balances;
+//   for (let issued of chainContracts[api.chain].issued) {
+//     const totalSupply = (
+//       await api.call({
+//         abi: "erc20:totalSupply",
+//         target: issued,
+//       })
+//     );
+//     const dsr = (
+//       await api.call({
+//         abi: {
+//           constant: true,
+//           inputs: [{ internalType: "address", name: "", type: "address" }],
+//           name: "dai",
+//           outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+//           payable: false,
+//           stateMutability: "view",
+//           type: "function",
+//         },
+//         target: "0x35d1b3f3d7966a1dfe207aa4514c12a259a0492b",
+//         params: ["0x197E90f9FAD81970bA7976f33CbD77088E5D7cf7"],
+//       })
+//     );
+//     sumSingleBalance(
+//       balances,
+//       "peggedUSD",
+//       // totalSupply / 10 ** decimals,
+//       (Number(totalSupply) + dsr / 1e27) / 10 ** decimals,
+//       "issued",
+//       false
+//     );
+//   }
+//   return balances;
+// }
 
 async function fromETH(
+  api: ChainApi,
   owner: string,
   decimals: number,
   pegType?: PeggedAssetType
@@ -98,44 +92,37 @@ async function fromETH(
     "0x6B175474E89094C44Da98b954EedeAC495271d0F",
   ];
 
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
-    let balances = {} as Balances;
-    let assetPegType = pegType ? pegType : ("peggedUSD" as PeggedAssetType);
+  let balances = {} as Balances;
+  let assetPegType = pegType ? pegType : ("peggedUSD" as PeggedAssetType);
 
-    for (const target of targets) {
-      let bridged = (
-        await sdk.api.erc20.balanceOf({
+  for (const target of targets) {
+    let bridged = (
+      await api.call({
+        abi:'erc20:balanceOf',
+        target: target,
+        params: [owner],
+      })
+    );
+    if (target === "0x83F20F44975D03b1b09e64809B757c47f942BEeA") {
+      bridged = (
+        await api.call({
           target: target,
-          owner: owner,
-          block: _ethBlock,
+          abi: "function convertToAssets(uint256 shares) public view returns (uint256)",
+          params: [bridged],
         })
-      ).output;
-      if (target === "0x83F20F44975D03b1b09e64809B757c47f942BEeA") {
-        bridged = (
-          await sdk.api.abi.call({
-            target: target,
-            abi: "function convertToAssets(uint256 shares) public view returns (uint256)",
-            params: [bridged],
-            block: _ethBlock,
-          })
-        ).output;
-      }
-
-      sumSingleBalance(
-        balances,
-        assetPegType,
-        bridged / 10 ** decimals,
-        target,
-        false
       );
     }
 
-    return balances;
-  };
+    sumSingleBalance(
+      balances,
+      assetPegType,
+      bridged / 10 ** decimals,
+      target,
+      false
+    );
+  }
+
+  return balances;
 }
 
 async function reinetworkMinted(address: string, decimals: number) {
@@ -248,7 +235,7 @@ async function elrondBridged(tokenID: string, decimals: number) {
 
 const adapter: PeggedIssuanceAdapter = {
   ethereum: {
-    minted: chainMinted("ethereum", 18),
+    minted: chainMinted(chainContracts.ethereum.issued, 18),
   },
   solana: {
     ethereum: solanaMintedOrBridged(chainContracts.solana.bridgedFromETH),
@@ -340,7 +327,7 @@ const adapter: PeggedIssuanceAdapter = {
     ethereum: bridgedSupply("evmos", 18, chainContracts.evmos.bridgedFromETH),
   },
   xdai: {
-    ethereum: fromETH("0x4aa42145Aa6Ebf72e164C9bBC74fbD3788045016", 18),
+    ethereum: (api:ChainApi) => fromETH(api, "0x4aa42145Aa6Ebf72e164C9bBC74fbD3788045016", 18),
     bsc: bridgedSupply("xdai", 18, chainContracts.xdai.bridgedFromBSC),
   },
   terra: {

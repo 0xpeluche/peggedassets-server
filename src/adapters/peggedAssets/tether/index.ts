@@ -4,11 +4,12 @@ import { getTotalSupply as aptosGetTotalSupply } from "../helper/aptos";
 import { sumMultipleBalanceFunctions, sumSingleBalance } from "../helper/generalUtil";
 import {
   bridgedSupply,
+  chainMinted,
+  chainUnreleased,
   getApi,
   osmosisSupply,
-  solanaMintedOrBridged,
   supplyInEthereumBridge,
-  terraSupply,
+  terraSupply
 } from "../helper/getSupply";
 import { getTotalSupply as kavaGetTotalSupply } from "../helper/kava";
 import { mixinSupply } from "../helper/mixin";
@@ -29,6 +30,7 @@ import {
   PeggedAssetType,
   PeggedIssuanceAdapter,
 } from "../peggedAsset.type";
+import { solanaMintedOrBridged } from "../societe-generale-forge-eurcv";
 import { chainContracts } from "./config";
 const axios = require("axios");
 const retry = require("async-retry");
@@ -67,36 +69,6 @@ Velas: amount on chain does not match amount in multichain bridge, so it has not
 
 Caduceus: 0x639a647fbe20b6c8ac19e48e2de44ea792c62c5c is multichain, don't have provider or API yet.
 */
-
-async function chainMinted(chain: string, decimals: number) {
-  return async function (_api: ChainApi) {
-    const api = await getApi(chain, _api)
-    let balances = {} as Balances;
-    for (let issued of chainContracts[chain].issued) {
-      const totalSupply = await api.call({ abi: "erc20:totalSupply", target: issued, })
-      sumSingleBalance(
-        balances,
-        "peggedUSD",
-        totalSupply / 10 ** decimals,
-        "issued",
-        false
-      );
-    }
-    return balances;
-  };
-}
-
-async function chainUnreleased(chain: string, decimals: number, owner: string) {
-  return async function (_api: ChainApi) {
-    const api = await getApi(chain, _api)
-    let balances = {} as Balances;
-    for (let issued of chainContracts[chain].issued) {
-      const reserve = await api.call({ target: issued, params: owner, abi: "erc20:balanceOf", })
-      sumSingleBalance(balances, "peggedUSD", reserve / 10 ** decimals);
-    }
-    return balances;
-  };
-}
 
 async function bscBridgedFromTron(
   bscUSDTAddress: string,
@@ -603,54 +575,35 @@ async function elrondBridged(tokenID: string, decimals: number) {
 
 const adapter: PeggedIssuanceAdapter = {
   ethereum: {
-    minted: chainMinted("ethereum", 6),
-    unreleased: chainUnreleased(
-      "ethereum",
-      6,
-      chainContracts.ethereum.unreleased[0]
-    ),
+    minted: chainMinted(chainContracts.ethereum.issued, 6),
+    unreleased: chainUnreleased(chainContracts.ethereum.issued, 6, chainContracts.ethereum.unreleased[0]),
     bsc: bridgedSupply("ethereum", 18, chainContracts.ethereum.bridgedFromBSC),
-    solana: bridgedSupply(
-      "ethereum",
-      6,
-      chainContracts.ethereum.bridgedFromSol
-    ),
+    solana: bridgedSupply("ethereum", 6 ,chainContracts.ethereum.bridgedFromSol),
   },
-  /*
-  osmosis: {
-    ethereum: osmosisSupply("usdt", "Axelar", "Kava"),
-  },
-  */
+  // /*
+  // osmosis: {
+  //   ethereum: osmosisSupply("usdt", "Axelar", "Kava"),
+  // },
+  // */
   polygon: {
-    ethereum: bridgedSupply(
-      "polygon",
-      6,
-      chainContracts.polygon.bridgedFromETH
-    ),
+    ethereum: bridgedSupply("polygon",6, chainContracts.polygon.bridgedFromETH),
     solana: bridgedSupply("polygon", 6, chainContracts.polygon.bridgedFromSol),
   },
   bsc: {
     ethereum: sumMultipleBalanceFunctions(
       [
-        supplyInEthereumBridge(
-          chainContracts.ethereum.issued[0],
-          chainContracts.bsc.bridgeOnETH[0],
-          6
-        ),
+        supplyInEthereumBridge(chainContracts.ethereum.issued[0], chainContracts.bsc.bridgeOnETH[0], 6),
         bridgedSupply("bsc", 6, chainContracts.bsc.bridgedFromETH),
       ],
       "peggedUSD"
     ),
     avax: bridgedSupply("bsc", 6, chainContracts.bsc.bridgedFromAvax),
     solana: bridgedSupply("bsc", 6, chainContracts.bsc.bridgedFromSol),
-    tron: bscBridgedFromTron(
-      chainContracts.bsc.bridgedFromETHAndTron[0],
-      chainContracts.bsc.bridgeOnETH[0]
-    ),
+    // tron: bscBridgedFromTron(chainContracts.bsc.bridgedFromETHAndTron[0], chainContracts.bsc.bridgeOnETH[0]),
   },
   avax: {
-    minted: chainMinted("avax", 6),
-    unreleased: chainUnreleased("avax", 6, chainContracts.avax.unreleased[0]),
+    minted: chainMinted(chainContracts.avax.issued, 6),
+    unreleased: chainUnreleased(chainContracts.avax.issued, 6, chainContracts.avax.unreleased[0]),
     ethereum: bridgedSupply("avax", 6, chainContracts.avax.bridgedFromETH),
     solana: bridgedSupply("avax", 6, chainContracts.avax.bridgedFromSol),
     bsc: bridgedSupply("avax", 18, chainContracts.avax.bridgedFromBSC),
@@ -665,18 +618,10 @@ const adapter: PeggedIssuanceAdapter = {
     avax: solanaMintedOrBridged(chainContracts.solana.bridgedFromAvax),
   },
   arbitrum: {
-    ethereum: bridgedSupply(
-      "arbitrum",
-      6,
-      chainContracts.arbitrum.bridgedFromETH
-    ),
+    ethereum: bridgedSupply("arbitrum", 6, chainContracts.arbitrum.bridgedFromETH),
   },
   optimism: {
-    ethereum: bridgedSupply(
-      "optimism",
-      6,
-      chainContracts.optimism.bridgedFromETH
-    ),
+    ethereum: bridgedSupply("optimism", 6, chainContracts.optimism.bridgedFromETH),
   },
   boba: {
     ethereum: bridgedSupply("boba", 6, chainContracts.boba.bridgedFromETH),
@@ -762,16 +707,16 @@ const adapter: PeggedIssuanceAdapter = {
       "peggedUSD"
     ),
   },
-  tron: {
-    minted: usdtApiMinted("totaltokens_tron"),
-    unreleased: sumMultipleBalanceFunctions(
-      [
-        usdtApiUnreleased("reserve_balance_tron"),
-        usdtApiUnreleased("quarantined_tron"),
-      ],
-      "peggedUSD"
-    ),
-  },
+  // tron: {
+  //   minted: usdtApiMinted("totaltokens_tron"),
+  //   unreleased: sumMultipleBalanceFunctions(
+  //     [
+  //       usdtApiUnreleased("reserve_balance_tron"),
+  //       usdtApiUnreleased("quarantined_tron"),
+  //     ],
+  //     "peggedUSD"
+  //   ),
+  // },
   aurora: {
     near: bridgedSupply("aurora", 6, chainContracts.aurora.bridgedFromNear),
   },
@@ -900,11 +845,11 @@ const adapter: PeggedIssuanceAdapter = {
       "peggedUSD"
     ),
   },
-  kava: {
-    minted: kavaMinted(),
-    unreleased: chainUnreleased("kava", 6, chainContracts.kava.unreleased[0]),
-    ethereum: kavaBridged(),
-  },
+  // kava: {
+  //   minted: kavaMinted(),
+  //   unreleased: chainUnreleased("kava", 6, chainContracts.kava.unreleased[0]),
+  //   ethereum: kavaBridged(),
+  // },
   ontology: {
     //ethereum: ontologyBridged(),
   },

@@ -1,10 +1,10 @@
 const sdk = require("@defillama/sdk");
-import { addChainExports,supplyInEthereumBridge } from "../helper/getSupply";
+import { ChainApi } from "@defillama/sdk";
 import { sumSingleBalance } from "../helper/generalUtil";
+import { addChainExports, supplyInEthereumBridge } from "../helper/getSupply";
 import {
-  ChainBlocks,
-  PeggedIssuanceAdapter,
-  Balances,  ChainContracts,
+  Balances,
+  PeggedIssuanceAdapter
 } from "../peggedAsset.type";
 
 const pegkeepers = [
@@ -14,69 +14,53 @@ const pegkeepers = [
   "0x503E1Bf274e7a6c64152395aE8eB57ec391F91F8"
 ]
 
-async function chainMinted(chain: string, decimals: number) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
-    let balances = {} as Balances;
-    const totalDebt = (
-      await sdk.api.abi.call({
-        abi: {
-          stateMutability: "view",
-          type: "function",
-          name: "total_debt",
-          inputs: [],
-          outputs: [{ name: "", type: "uint256" }],
-        },
-        target: "0xC9332fdCB1C491Dcc683bAe86Fe3cb70360738BC",
-        block: _ethBlock,
-        chain: chain,
-      })
-    ).output;
-    
-    // Get debt from all pegkeepers
-    const pegkeeperDebtCalls = pegkeepers.map(keeper => ({
-      target: keeper,
-      params: []
-    }));
-    
-    const pegkeeperDebts = await sdk.api.abi.multiCall({
+async function chainMinted(api: ChainApi, decimals: number) {
+  let balances = {} as Balances;
+  const totalDebt = (
+    await api.call({
       abi: {
         stateMutability: "view",
         type: "function",
-        name: "debt",
+        name: "total_debt",
         inputs: [],
         outputs: [{ name: "", type: "uint256" }],
       },
-      calls: pegkeeperDebtCalls,
-      block: _ethBlock,
-      chain: chain,
-    });
-    
-    // Sum up all pegkeeper debts
-    let totalPegkeeperDebt = 0;
-    pegkeeperDebts.output.forEach((call: any) => {
-        totalPegkeeperDebt += Number(call.output);
-    });
-    
-    // Add total_debt and pegkeeper debt together
-    const totalSupply = Number(totalDebt) + totalPegkeeperDebt;
-    
-    sumSingleBalance(
-      balances,
-      "peggedUSD",
-      totalSupply / 10 ** decimals,
-      "issued",
-      false
-    );
-    return balances;
-  };
+      target: "0xC9332fdCB1C491Dcc683bAe86Fe3cb70360738BC",
+    })
+  );
+
+  // Get debt from all pegkeepers
+  const pegkeeperDebts = await api.multiCall({
+    abi: {
+      stateMutability: "view",
+      type: "function",
+      name: "debt",
+      inputs: [],
+      outputs: [{ name: "", type: "uint256" }],
+    },
+    calls: pegkeepers.map((keeper) => ({ target: keeper }))
+  })
+
+  // Sum up all pegkeeper debts
+  let totalPegkeeperDebt = 0;
+  pegkeeperDebts.forEach((call: any) => {
+      totalPegkeeperDebt += Number(call);
+  });
+  
+  // Add total_debt and pegkeeper debt together
+  const totalSupply = Number(totalDebt) + totalPegkeeperDebt;
+  
+  sumSingleBalance(
+    balances,
+    "peggedUSD",
+    totalSupply / 10 ** decimals,
+    "issued",
+    false
+  );
+  return balances;
 }
 
 const chainContracts = {
- 
   arbitrum: {
     bridgedFromETH: "0x498Bf2B1e120FeD3ad3D42EA2165E9b73f99C1e5"
   },
@@ -109,7 +93,7 @@ const chainContracts = {
 const adapter: PeggedIssuanceAdapter = {
   ...addChainExports(chainContracts),
   ethereum: {
-    minted: chainMinted("ethereum", 18),
+    minted: (api: ChainApi) => chainMinted(api, 18),
   },
   waves: {
     ethereum: supplyInEthereumBridge( // PepeTeam Bridge

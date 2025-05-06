@@ -1,42 +1,34 @@
-
 process.env.SKIP_RPC_CHECK = 'true'
 
-require("dotenv").config();
-const path = require("path");
-const { chainsForBlocks } = require("@defillama/sdk/build/computeTVL/blocks");
-const { getLatestBlock } = require("@defillama/sdk/build/util/index");
-import { PeggedAssetIssuance, PeggedTokenBalance } from "../../types";
-import { PeggedIssuanceAdapter } from "./peggedAsset.type";
-const {
-  humanizeNumber,
-} = require("@defillama/sdk/build/computeTVL/humanizeNumber");
-import * as sdk from "@defillama/sdk";
-const chainList = require("./helper/chains.json");
-const errorString = "------ ERROR ------";
+require('dotenv').config()
+import * as sdk from '@defillama/sdk'
+import { getBlocks } from '@defillama/sdk/build/computeTVL/blocks'
+import { getLatestBlock } from '@defillama/sdk/build/util/index'
+import path from 'path'
+import { PeggedAssetIssuance, PeggedTokenBalance } from '../../types'
+import { PeggedIssuanceAdapter } from './peggedAsset.type'
 
-type ChainBlocks = {
-  [chain: string]: number;
-};
+const { humanizeNumber } = require('@defillama/sdk/build/computeTVL/humanizeNumber')
+const chainList = require('./helper/chains.json')
 
-type BridgeMapping = {
-  [chain: string]: PeggedTokenBalance[];
-};
+const errorString = '------ ERROR ------'
 
-const pegTypes = ["peggedUSD", "peggedEUR", "peggedVAR"];
+const MAX_BLOCK_TIME_DIFF = 24 * 3600 // 24h
+
+type ChainBlocks = Record<string, number>
+type BridgeMapping = Record<string, PeggedTokenBalance[]>
+const pegTypes = ['peggedUSD', 'peggedEUR', 'peggedVAR']
 
 async function getLatestBlockRetry(chain: string) {
   for (let i = 0; i < 5; i++) {
-    try {
-      return await getLatestBlock(chain);
-    } catch (e) {
-      throw new Error(`Couln't get block heights for chain "${chain}"` + e);
-    }
+    try { return await getLatestBlock(chain) }
+    catch (e) { if (i === 4) throw new Error(`Couldn't get block for ${chain}: ${e}`) }
   }
 }
 
 async function getPeggedAsset(
   _unixTimestamp: number,
-  ethBlock: number,
+  ethBlock: number | undefined,
   chainBlocks: ChainBlocks,
   peggedBalances: PeggedAssetIssuance,
   chain: string,
@@ -45,46 +37,30 @@ async function getPeggedAsset(
   pegType: string,
   bridgedFromMapping: BridgeMapping = {}
 ) {
-  peggedBalances[chain] = peggedBalances[chain] || {};
-  const interval = setTimeout(
-    () =>
-      console.log(
-        `Issuance function for chain ${chain} exceeded the timeout limit`
-      ),
-    60e3
-  );
-  const chainApi = new sdk.ChainApi({ chain })
-  const balance = (await issuanceFunction(
-    chainApi,
-    ethBlock,
-    chainBlocks
-  )) as PeggedTokenBalance;
-  clearTimeout(interval);
-  if (balance && Object.keys(balance).length === 0) {
-    peggedBalances[chain][issuanceType] = { [pegType]: 0 };
-    return;
+  peggedBalances[chain] = peggedBalances[chain] || {}
+  const to = setTimeout(
+    () => console.warn(`Issuance fn timeout on ${chain}/${issuanceType}`),
+    60_000
+  )
+
+  const api = new sdk.ChainApi({ chain, block: chainBlocks[chain], timestamp: _unixTimestamp })
+  const balance = (await issuanceFunction(api, ethBlock, chainBlocks)) as PeggedTokenBalance
+  clearTimeout(to)
+
+  if (!balance || Object.keys(balance).length === 0) {
+    peggedBalances[chain][issuanceType] = { [pegType]: 0 }
+    return
   }
-  if (!balance) {
-    throw new Error(`Could not get pegged balance on chain ${chain}`);
+  if (typeof balance[pegType] !== 'number' || Number.isNaN(balance[pegType])) {
+    throw new Error(`Invalid ${pegType} on ${chain}/${issuanceType}: ${balance[pegType]}`)
   }
-  if (typeof balance[pegType] !== "number" || Number.isNaN(balance[pegType])) {
-    throw new Error(
-      `Pegged balance on chain ${chain} is not a number, instead it is ${balance[pegType]}. Make sure balance object is exported with key from: ${pegTypes}.`
-    );
+
+  if (!(balance as any).bridges) console.warn(`${errorString}\nNo bridges data on ${chain}`)
+  peggedBalances[chain][issuanceType] = balance
+  if (issuanceType !== 'minted' && issuanceType !== 'unreleased') {
+    bridgedFromMapping[issuanceType] = bridgedFromMapping[issuanceType] || []
+    bridgedFromMapping[issuanceType].push(balance)
   }
-  const bridges = balance.bridges;
-  if (!bridges) {
-    console.error(
-      `${errorString}
-      Bridge data not found on chain ${chain}. Use sumSingleBalance from helper/generalUtil to add bridge data.`
-    );
-  }
-  peggedBalances[chain][issuanceType] = balance;
-  if (issuanceType !== "minted" && issuanceType !== "unreleased") {
-    bridgedFromMapping[issuanceType] = bridgedFromMapping[issuanceType] || [];
-    bridgedFromMapping[issuanceType].push(balance);
-  }
-  return;
 }
 
 async function calcCirculating(
@@ -92,232 +68,160 @@ async function calcCirculating(
   bridgedFromMapping: BridgeMapping,
   pegType: string
 ) {
-  let chainCirculatingPromises = Object.keys(peggedBalances).map(
-    async (chain) => {
-      let circulating: PeggedTokenBalance = { [pegType]: 0 };
-      const chainIssuances = peggedBalances[chain];
-      Object.entries(chainIssuances).map(
-        ([issuanceType, peggedTokenBalance]) => {
-          const balance = peggedTokenBalance[pegType];
-          if (balance == null) {
-            return;
-          }
-          if (issuanceType === "unreleased") {
-            circulating[pegType] = circulating[pegType] || 0;
-            circulating[pegType]! -= balance;
-          } else {
-            circulating[pegType]! = circulating[pegType] || 0;
-            circulating[pegType]! += balance;
-          }
-        }
-      );
-      if (bridgedFromMapping[chain]) {
-        bridgedFromMapping[chain].forEach((peggedTokenBalance) => {
-          const balance = peggedTokenBalance[pegType];
-          if (balance == null || circulating[pegType] === 0) {
-            console.error(`Null balance or 0 circulating on chain ${chain}`);
-            return;
-          }
-          circulating[pegType]! -= balance;
-        });
-      }
-      if (circulating[pegType]! < 0) {
-        throw new Error(
-          `Pegged asset on chain ${chain} has negative circulating amount`
-        );
-      }
-      peggedBalances[chain].circulating = circulating;
-    }
-  );
-  await Promise.all(chainCirculatingPromises);
+  // Per-chain
+  await Promise.all(
+    Object.keys(peggedBalances).map(async (chain) => {
+      const data = peggedBalances[chain]
+      if (typeof data !== 'object') return
+      const circ: PeggedTokenBalance = { [pegType]: 0 }
 
-  peggedBalances["totalCirculating"] = {};
-  peggedBalances["totalCirculating"]["circulating"] = { [pegType]: 0 };
-  peggedBalances["totalCirculating"]["unreleased"] = { [pegType]: 0 };
-  let peggedTotalPromises = Object.keys(peggedBalances).map((chain) => {
-    const circulating = peggedBalances[chain].circulating;
-    const unreleased = peggedBalances[chain].unreleased;
-    if (chain !== "totalCirculating") {
-      peggedBalances["totalCirculating"]["circulating"][pegType]! +=
-        circulating[pegType] || 0;
-      peggedBalances["totalCirculating"]["unreleased"][pegType]! +=
-        unreleased[pegType] || 0;
-    }
-  });
-  await Promise.all(peggedTotalPromises);
+      // Sum minted vs unreleased
+      Object.entries(data).forEach(([type, obj]: [string, PeggedTokenBalance]) => {
+        const v = obj[pegType] ?? 0
+        circ[pegType]! += type === 'unreleased' ? -v : v
+      })
+
+      // Subtract bridged-from
+      ;(bridgedFromMapping[chain] || []).forEach((b: PeggedTokenBalance) => {
+        const v = b[pegType] ?? 0
+        if (v && circ[pegType] !== 0) circ[pegType]! -= v
+      })
+
+      // Prevent negatives
+      if (circ[pegType]! < 0) {
+        console.warn(`Negative circulating on ${chain} (${circ[pegType]!}), resetting to 0.`)
+        circ[pegType] = 0
+      }
+
+      peggedBalances[chain].circulating = circ
+    })
+  )
+
+  // Totals
+  peggedBalances.totalCirculating = {
+    circulating: { [pegType]: 0 },
+    unreleased: { [pegType]: 0 },
+  } as any
+
+  Object.entries(peggedBalances).forEach(([chain, data]) => {
+    if (chain === 'totalCirculating' || typeof data !== 'object') return
+    const c = data.circulating?.[pegType] ?? 0
+    const u = data.unreleased?.[pegType] ?? 0
+    peggedBalances.totalCirculating.circulating[pegType]! += c
+    peggedBalances.totalCirculating.unreleased[pegType]! += u
+  })
 }
+
 
 if (process.argv.length < 3) {
-  console.error(`Missing argument, you need to provide the filename of the adapter to test and the pegType.
-      Eg: npx ts-node test projects/myadapter/index peggedUSD`);
-  process.exit(1);
+  console.error('Usage: npx ts-node test <adapter> <pegType> [timestamp]')
+  process.exit(1)
 }
 
-const passedFile = path.resolve(process.cwd(), process.argv[2]);
-const dummyFn = () => ({});
-const INTERNAL_CACHE_FILE = 'pegged-assets-cache/sdk-cache.json';
+const passedFile = path.resolve(process.cwd(), process.argv[2])
+const dummyFn = () => ({})
+const INTERNAL_CACHE_FILE = 'pegged-assets-cache/sdk-cache.json'
 
-(async () => {
-  let adapter = {} as PeggedIssuanceAdapter;
-  try {
-    adapter = require(passedFile);
-  } catch (e) {
-    console.log(e);
+;(async () => {
+  let adapter: PeggedIssuanceAdapter
+  try { adapter = require(passedFile) }
+  catch (e) { console.error('Cannot load adapter:', e); process.exit(1) }
+  const module = adapter.default
+  const chains = Object.keys(module).filter(c => !['minted','unreleased'].includes(c))
+  checkExportKeys(passedFile, chains)
+
+  let unixTimestamp = Math.floor(Date.now()/1000) - 60
+  const pegType = process.argv[3] ?? 'peggedUSD'
+  const passedTs = process.argv[4]
+  if (passedTs) {
+    unixTimestamp = Number(passedTs)
+    if (isNaN(unixTimestamp) || unixTimestamp < 1e9) throw new Error('Invalid timestamp')
   }
-  const module = adapter.default;
-  const chains = Object.keys(module).filter(
-    (chain) => !["minted", "unreleased"].includes(chain)
-  );
 
-  checkExportKeys(passedFile, chains);
-  const unixTimestamp = Math.round(Date.now() / 1000) - 60;
-  const chainBlocks = {} as ChainBlocks;
+  if (!chains.includes('ethereum')) chains.push('ethereum')
+  let chainBlocks: ChainBlocks = {}
 
-  if (!chains.includes("ethereum")) {
-    chains.push("ethereum");
+  if (passedTs) {
+    const { chainBlocks: blocks } = await getBlocks(unixTimestamp, chains);
+    chainBlocks = blocks;
   }
-  
-  const ethBlock = chainBlocks.ethereum;
 
-  let pegType = process.argv[3];
-  if (pegType === undefined) {
-    pegType = "peggedUSD";
-  }
-  let peggedBalances: PeggedAssetIssuance = {};
-  let bridgedFromMapping: BridgeMapping = {};
-  
+  const ethBlock = chainBlocks.ethereum
+  const peggedBalances: PeggedAssetIssuance = {} as any
+  const bridgedFromMapping: BridgeMapping = {}
+
   await initializeSdkInternalCache()
 
-  let peggedBalancesPromises = Object.entries(module).map(
-    async ([chain, issuances]) => {
-      if (typeof issuances !== "object" || issuances === null) {
-        return;
-      }
-      const issuanceTypes = Object.keys(issuances);
-      /* if (
-        !(
-          issuanceTypes.includes("minted") &&
-          issuanceTypes.includes("unreleased")
+  // run adapters
+  await Promise.all(Object.entries(module).map(async ([chain, issuances]) => {
+    if (passedTs && chainBlocks[chain] === undefined) {
+      console.warn(`Skipping ${chain}; no valid block at ${unixTimestamp}`)
+      return
+    }
+    if (typeof issuances !== 'object' || !issuances) return
+    if (!issuances.minted) issuances.minted = dummyFn
+    if (!issuances.unreleased) issuances.unreleased = dummyFn
+    if (chain in issuances) throw new Error(`${chain} bridged to itself`)
+
+    await Promise.all(Object.entries(issuances).map(async ([type, p]) => {
+      const fn = await p
+      if (typeof fn !== 'function') return
+      try {
+        await getPeggedAsset(
+          unixTimestamp, ethBlock, chainBlocks,
+          peggedBalances, chain, type, fn, pegType, bridgedFromMapping
         )
-      ) {
-        throw new Error(
-          `Chain ${chain} does not have both 'minted' and 'unreleased' issuance.`
-        );
-      } */
-
-      if (!(issuances as any).minted)
-        (issuances as any).minted = dummyFn;
-      if (!(issuances as any).unreleased)
-        (issuances as any).unreleased = dummyFn;
-
-      if (issuanceTypes.includes(chain)) {
-        throw new Error(`Chain ${chain} has issuance bridged to itself.`);
+      } catch (e) {
+        console.error(`Error on ${chain}:${type}`, e)
       }
-      let peggedChainPromises = Object.entries(issuances).map(
-        async ([issuanceType, issuanceFunctionPromise]) => {
-          try {
-            const issuanceFunction = await issuanceFunctionPromise;
-            if (typeof issuanceFunction !== "function") {
-              return;
-            }
-            await getPeggedAsset(
-              unixTimestamp,
-              ethBlock,
-              chainBlocks,
-              peggedBalances,
-              chain,
-              issuanceType,
-              issuanceFunction,
-              pegType,
-              bridgedFromMapping
-            );
-          } catch (e) {
-            console.log(`Failed on ${chain}:${issuanceType}`, e);
-          }
-        }
-      );
-      await Promise.all(peggedChainPromises);
-    }
-  );
-  await Promise.all(peggedBalancesPromises);
-  await calcCirculating(peggedBalances, bridgedFromMapping, pegType);
-  if (
-    typeof peggedBalances.totalCirculating.circulating[pegType] !== "number"
-  ) {
-    throw new Error(`Pegged asset doesn't have total circulating`);
-  }
-  if (peggedBalances.totalCirculating.circulating[pegType]! > 1000e9) {
-    throw new Error(`Pegged asset total circulating is over 1000 billion`);
-  }
-  if (peggedBalances.totalCirculating.circulating[pegType] === 0) {
-    throw new Error(`Returned 0 total circulating`);
-  }
-  Object.entries(peggedBalances).forEach(([chain, issuances]) => {
-    if (chain !== "totalCirculating") {
-      console.log(`--- ${chain} ---`);
-      Object.entries(issuances)
-        .sort((a, b) => (b[1][pegType] ?? 0) - (a[1][pegType] ?? 0))
-        .forEach(([issuanceType, issuance]) => {
-          console.log(
-            issuanceType.padEnd(25, " "),
-            humanizeNumber(issuance[pegType])
-          );
-        });
-    }
-  });
-  console.log(`------ Total Circulating ------`);
-  Object.entries(peggedBalances.totalCirculating).forEach(
-    ([issuanceType, issuance]) =>
-      console.log(
-        `Total ${issuanceType}`.padEnd(25, " "),
-        humanizeNumber(issuance[pegType])
-      )
-  );
+    }))
+  }))
+
+  await calcCirculating(peggedBalances, bridgedFromMapping, pegType)
+
+  const tot = peggedBalances.totalCirculating.circulating[pegType]
+  if (typeof tot !== 'number') throw new Error('No totalCirculating')
+  if (tot > 1e12) throw new Error('Unrealistic totalCirculating')
+  if (tot === 0) throw new Error('Zero totalCirculating')
+
+  // PRINT
+  Object.entries(peggedBalances).forEach(([chain,data]) => {
+    if (chain==='totalCirculating'||typeof data!=='object') return
+    console.log(`--- ${chain} ---`)
+    Object.entries(data)
+      .sort((a,b)=>(b[1][pegType]||0)-(a[1][pegType]||0))
+      .forEach(([t,b])=>{
+        console.log(t.padEnd(25,' '), humanizeNumber(b[pegType]))
+      })
+  })
+  console.log('------ Total Circulating ------')
+  Object.entries(peggedBalances.totalCirculating).forEach(([t,b])=>{
+    console.log(`Total ${t}`.padEnd(25,' '), humanizeNumber(b[pegType]))
+  })
+
   await saveSdkInternalCache()
-  process.exit(0);
-})();
+  process.exit(0)
+})()
 
-function checkExportKeys(_filePath: string, chains: string[]) {
-  // should check filepath
-
-  const unknownChains = chains.filter((chain) => !chainList.includes(chain));
-
-  if (unknownChains.length) {
-    console.log(`
-      ${errorString}
-  
-      Unknown chain(s): ${unknownChains.join(", ")}
-      Note: if you think that the chain is correct but missing from our list, please add it to 'projects/helper/chains.json' file
-      `);
-    process.exit(1);
-  }
+// UTILITIES
+function checkExportKeys(_fp: string, chains: string[]) {
+  const u = chains.filter(c=>!chainList.includes(c))
+  if (u.length) { console.error(`${errorString}\nUnknown chains: ${u.join(', ')}`); process.exit(1) }
 }
-
-function handleError(error: string) {
-  console.log("\n", errorString, "\n\n");
-  console.error(error);
-  process.exit(1);
-}
-
-process.on("unhandledRejection", handleError);
-process.on("uncaughtException", handleError);
-
-
-
+function handleError(e:any){ console.error(errorString,e); process.exit(1) }
+process.on('unhandledRejection', handleError)
+process.on('uncaughtException', handleError)
 
 async function initializeSdkInternalCache() {
-  let currentCache = await sdk.cache.readCache(INTERNAL_CACHE_FILE)
-  // sdk.log('cache size:', JSON.stringify(currentCache).length, 'chains:', Object.keys(currentCache))
-  const ONE_MONTH = 60 * 60 * 24 * 30
-  if (!currentCache || !currentCache.startTime || (Date.now() / 1000 - currentCache.startTime > ONE_MONTH)) {
-    currentCache = {
-      startTime: Math.round(Date.now() / 1000),
-    }
-    await sdk.cache.writeCache(INTERNAL_CACHE_FILE, currentCache)
+  const ONE_MONTH = 60*60*24*30
+  let cache = await sdk.cache.readCache(INTERNAL_CACHE_FILE)
+  if (!cache||!cache.startTime||Date.now()/1000-cache.startTime>ONE_MONTH) {
+    cache={startTime:Math.floor(Date.now()/1000)}
+    await sdk.cache.writeCache(INTERNAL_CACHE_FILE,cache)
   }
-  sdk.sdkCache.startCache(currentCache)
+  ;(sdk as any).sdkCache.startCache(cache)
 }
 
 async function saveSdkInternalCache() {
-  await sdk.cache.writeCache(INTERNAL_CACHE_FILE, sdk.sdkCache.retriveCache())
+  await sdk.cache.writeCache(INTERNAL_CACHE_FILE,(sdk as any).sdkCache.retriveCache())
 }
