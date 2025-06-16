@@ -654,6 +654,7 @@ const backfill: Record<string, number> = {
   blast: 1708819200,
   avax: 1714521600,
   berachain: 1737342000,
+  // sonic: 1733011200
 };
 const THRESHOLD = 0.01; // 1 %
 
@@ -750,7 +751,6 @@ function mergeChain(prev: Chain, snap: Chain, pt: string): Chain {
   if (snap.minted[pt]     !== 0) res.minted[pt]     = snap.minted[pt];
   if (snap.unreleased[pt] !== 0) res.unreleased[pt] = snap.unreleased[pt];
 
-  /* remplace uniquement les providers présents dans le snap */
   for (const [prov, dests] of Object.entries(snap.bridgedTo.bridges))
     res.bridgedTo.bridges[prov] = structuredClone(dests);
 
@@ -768,7 +768,6 @@ function isAllZero(c: Chain, pt: string) {
 
 /*────────── STANDARDISE ───────*/
 function standardise(rec: DayRec, pt: string) {
-  /*── 0. dé-duplication des alias de chaînes ──*/
   for (const key of Object.keys(rec)) {
     if (["PK", "SK", "totalCirculating"].includes(key)) continue;
     const canon = canonicalChain(key);
@@ -787,7 +786,6 @@ function standardise(rec: DayRec, pt: string) {
   const mirror:   Record<string, Record<string, number>> = {};
   chains.forEach((c) => { inbound[c] = 0; outbound[c] = 0; mirror[c] = {}; });
 
-  /* 1. in/out & miroir */
   for (const dst of chains) {
     let tot = 0;
     for (const prov of Object.values(rec[dst].bridgedTo.bridges) as any[]) {
@@ -802,16 +800,13 @@ function standardise(rec: DayRec, pt: string) {
     rec[dst].bridgedTo.peggedUSD = tot;
   }
 
-  /* 2. circulating par chaîne */
   for (const ch of chains) {
     const n = rec[ch] as Chain;
 
-    /* nettoyage des clés parasites */
     for (const k of Object.keys(n))
       if (!["minted", "unreleased", "circulating", "bridgedTo"].includes(k))
         delete (n as any)[k];
 
-    /* miroir entrant */
     for (const [srcRaw, amt] of Object.entries(mirror[ch]))
       n[canonical(srcRaw)] = { [pt]: amt };
 
@@ -824,7 +819,6 @@ function standardise(rec: DayRec, pt: string) {
       n.minted[pt] - unreleasedUsed + inbound[ch] - outbound[ch];
   }
 
-  /* 3. total global */
   const total = chains.reduce((s, c) => s + rec[c].circulating[pt], 0);
   rec.totalCirculating = {
     circulating: { [pt]: total },
@@ -891,7 +885,6 @@ function upgrade(rec: DayRec, pt: string): DayRec {
     process.exit(0);
   }
 
-  /*── sélection des chaînes ──*/
   let selected: string[] = [];
   let dyn = false;
   while (true) {
@@ -937,7 +930,7 @@ function upgrade(rec: DayRec, pt: string): DayRec {
             } catch (e: any) { errs.push(`${raw}.${meth}: ${e.message || e}`); }
           }
 
-          /* autres méthodes → bridges */
+          /* bridges */
           for (const [meth, fnOr] of Object.entries(adapter[raw] ?? {})) {
             if (["minted", "unreleased"].includes(meth)) continue;
             const fn = typeof (fnOr as any).then === "function" ? await fnOr : fnOr;
@@ -969,7 +962,6 @@ function upgrade(rec: DayRec, pt: string): DayRec {
     }
     if (!Object.keys(snaps).length) { console.log(chalk.blue("Nothing to store")); await wait(sleepMs); continue; }
 
-    /* fusion avec record précédent */
     const rec: DayRec = prev ? structuredClone(prev) : { PK: key.PK, SK: key.SK };
     for (const [c, s] of Object.entries(snaps))
       rec[c] = prev && prev[c] ? mergeChain(prev[c], s, pt) : s;
@@ -977,7 +969,7 @@ function upgrade(rec: DayRec, pt: string): DayRec {
     standardise(rec, pt);
     applyIgnorePaths(rec, prev, ignorePaths);
 
-    /*──────── Δ par chaîne ───────*/
+    /*──────── Δ chains ───────*/
     console.log(chalk.bold("\nΔ per chain (circulating)"));
     Object.keys(rec)
       .filter((k) => !["PK", "SK", "totalCirculating"].includes(k))
@@ -995,7 +987,7 @@ function upgrade(rec: DayRec, pt: string): DayRec {
     /*──────── Preview + DIFF ───────*/
     const show = (await askYN(chalk.yellow("Show full merged object? (y/N) "))).toLowerCase() === "y";
     if (show) {
-      console.log(JSON.stringify(rec, null, 2));
+      // console.log(JSON.stringify(rec, null, 2));
       if (prev) {
         const changes = diff(prev, rec) as Diff<any, any>[] | undefined;
         if (changes) {
@@ -1056,3 +1048,10 @@ function upgrade(rec: DayRec, pt: string): DayRec {
   console.error(chalk.red("Fatal error"), e);
   process.exit(1);
 });
+
+
+/**
+ * 
+ * npx ts-node --transpile-only refill.ts --adapter=societe-generale-forge-eurcv --start=1698278400 --end=1744243200  --table=prod-stablecoins-table --region=eu-central-1 --sleep=1000 --yes --apply
+ * 
+ */
