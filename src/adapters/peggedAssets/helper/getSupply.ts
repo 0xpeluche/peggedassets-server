@@ -1,7 +1,11 @@
 import { ChainApi } from "@defillama/sdk";
 import * as aptos from "../helper/aptos";
+import * as cardano from "../helper/cardano";
 import { getTokenSupply as solanaGetTokenSupply } from "../helper/solana";
 import * as sui from "../helper/sui";
+import * as tezos from "../helper/tezos";
+import * as starknet from "../helper/starknet";
+import { getZilliqaTokenSupply } from "../helper/zilliqa";
 import type {
   Balances,
   ChainBlocks,
@@ -112,6 +116,33 @@ export function solanaMintedOrBridged(
   targets: string[],
   pegType?: PeggedAssetType
 ) {
+  return async function () {
+    let balances = {} as Balances;
+    let assetPegType = pegType ? pegType : ("peggedUSD" as PeggedAssetType);
+    for (let target of targets) {
+      const totalSupply = await solanaGetTokenSupply(target);
+      sumSingleBalance(balances, assetPegType, totalSupply, target, true);
+    }
+    return balances;
+  };
+}
+
+export function fogoMintedOrBridged(targets: string[], pegType?: PeggedAssetType) {
+  return async function () {
+    let balances = {} as Balances;
+    let assetPegType = pegType ? pegType : ("peggedUSD" as PeggedAssetType);
+    for (let target of targets) {
+      const totalSupply = await solanaGetTokenSupply(target, "fogo");
+      sumSingleBalance(balances, assetPegType, totalSupply, target, true);
+    }
+    return balances;
+  };
+}
+
+export function zilliqaMintedOrBridged(
+  targets: string[],
+  pegType?: PeggedAssetType
+) {
   return async function (
     _timestamp: number,
     _ethBlock: number,
@@ -120,9 +151,28 @@ export function solanaMintedOrBridged(
     let balances = {} as Balances;
     let assetPegType = pegType ? pegType : ("peggedUSD" as PeggedAssetType);
     for (let target of targets) {
-      const totalSupply = await solanaGetTokenSupply(target);
+      const totalSupply = await getZilliqaTokenSupply(target);
       sumSingleBalance(balances, assetPegType, totalSupply, target, true);
     }
+    return balances;
+  };
+}
+
+export function tonTokenSupply(address: string) {
+  return async function (
+    _timestamp: number,
+    _ethBlock: number,
+    _chainBlocks: ChainBlocks
+  ) {
+    let balances = {} as Balances;
+    const res = await retry(
+      async (_bail: any) =>
+        await axios.get(
+          `https://toncenter.com/api/v3/jetton/masters?address=${address}&limit=1&offset=0`
+        )
+    );
+    const supply = res.data.jetton_masters[0].total_supply;
+    sumSingleBalance(balances, "peggedUSD", (supply) / 10 ** 6, address, false);
     return balances;
   };
 }
@@ -258,7 +308,7 @@ export function osmosisSupply(
       const res = await retry(
         async (_bail: any) =>
           await axios.get(
-            `https://lcd.osmosis.zone/osmosis/superfluid/v1beta1/supply?denom=${token}`
+            `https://rest-osmosis.ecostake.com/osmosis/superfluid/v1beta1/supply?denom=${token}`
           )
       );
       sumSingleBalance(
@@ -285,9 +335,9 @@ export function kujiraSupply(
 // const dummyFn = () => ({})
 
 export function addChainExports(config: any, adapter: any = {}, {
-  decmials = 18, pegType,
+  decimals = 18, pegType,
 }: {
-  decmials?: number
+  decimals?: number
   pegType?: string
 } = {}): PeggedIssuanceAdapter {
   Object.entries(config).forEach(([chain, chainConfig]: [string, any]) => {
@@ -299,6 +349,7 @@ export function addChainExports(config: any, adapter: any = {}, {
     Object.keys(chainConfig).forEach((key) => {
       switch (key) {
         case 'bridgeOnETH':
+          cExports.ethereum = supplyInEthereumBridge(config.ethereum.issued[0], chainConfig.bridgeOnETH[0], decimals, pegType as any);
         case 'pegType':
           break;
         case "issued":
@@ -312,16 +363,24 @@ export function addChainExports(config: any, adapter: any = {}, {
           break;
         case "bridgedFromETH":
           if (!Array.isArray(chainConfig.bridgedFromETH)) chainConfig.bridgedFromETH = [chainConfig.bridgedFromETH]
-          if (!cExports.ethereum)
-            cExports.ethereum = bridgedSupply(chain, decmials, chainConfig.bridgedFromETH)
+          if (!cExports.ethereum) {
+            if (chain === 'solana')
+              cExports.ethereum = solanaMintedOrBridged(chainConfig[key])
+            else
+              cExports.ethereum = bridgedSupply(chain, decimals, chainConfig.bridgedFromETH, undefined, "ethereum", pegType as any)
+          }
           break;
         default: {
           if (key.startsWith("bridgedFrom")) {
             let srcChain = key.slice("bridgedFrom".length).toLowerCase()
             if (srcChain === "ETH") srcChain = "ethereum"
             if (!Array.isArray(chainConfig[key])) chainConfig[key] = [chainConfig[key]]
-            if (!cExports[srcChain])
-              cExports[srcChain] = bridgedSupply(chain, decmials, chainConfig[key], undefined, srcChain, pegType as any)
+            if (!cExports[srcChain]) {
+              if (chain === 'solana')
+                cExports[srcChain] = solanaMintedOrBridged(chainConfig[key])
+              else
+                cExports[srcChain] = bridgedSupply(chain, decimals, chainConfig[key], undefined, srcChain, pegType as any)
+            }
           } else
             console.log(`Ignored: Unknown key ${key} in ${chain} config for addChainExports`)
         }
@@ -338,31 +397,53 @@ function getIssued({
 }: { issued: string[] | string, pegType: PeggedAssetType, issuedABI: string }) {
   return async (api: ChainApi) => {
     const balances = {} as Balances;
+    const issuedList = typeof issued === "string" ? [issued] : issued;
     if (api.chain === "solana") {
-      for (const i of issued) {
+      for (const i of issuedList) {
         const supply = await solanaGetTokenSupply(i)
         sumSingleBalance(balances, pegType, supply, 'issued', false);
         return balances;
       }
     }
     if (api.chain === "sui") {
-      for (const i of issued) {
+      for (const i of issuedList) {
         const supply = await sui.getTokenSupply(i)
         sumSingleBalance(balances, pegType, supply, 'issued', false);
         return balances;
       }
     }
     if (api.chain === "aptos") {
-      for (const i of issued) {
+      for (const i of issuedList) {
         const supply = await aptos.getTokenSupply(i)
         sumSingleBalance(balances, pegType, supply, 'issued', false);
         return balances;
       }
     }
-    if (typeof issued === "string") issued = [issued];
-    const supplies = await api.multiCall({ abi: issuedABI, calls: issued })
-    const decimals = await api.multiCall({ abi: 'erc20:decimals', calls: issued })
-    issued.forEach((_address, i) => {
+    if (api.chain === 'tezos') {
+      for (const i of issuedList) {
+        const supply = await tezos.getTotalSupply(i)
+        sumSingleBalance(balances, pegType, supply, 'issued', false);
+        return balances;
+      }
+    }
+    if (api.chain === 'starknet') {
+      for (const i of issuedList) {
+        const supply = await starknet.getTotalSupply(i)
+        sumSingleBalance(balances, pegType, supply, 'issued', false);
+        return balances;
+      }
+    }
+
+    if (api.chain === 'cardano') {
+      for (const i of issuedList) {
+        const supply = await cardano.getTotalSupply(i)
+        sumSingleBalance(balances, pegType, supply, 'issued', false);
+        return balances;
+      }
+    }
+    const supplies = await api.multiCall({ abi: issuedABI, calls: issuedList })
+    const decimals = await api.multiCall({ abi: 'erc20:decimals', calls: issuedList })
+    issuedList.forEach((_address, i) => {
       sumSingleBalance(balances, pegType, supplies[i] / 10 ** decimals[i], 'issued', false);
     })
 
@@ -396,6 +477,9 @@ function getUnreleased({
     const balances = {} as Balances;
     if (typeof issued === "string") issued = [issued];
     if (typeof unreleased === "string") unreleased = [unreleased]
+
+    if (api.chain === 'starknet') return starknet.getUnreleased({ issued, unreleased, balances, sumSingleBalance, pegType})
+
     const decimals = await api.multiCall({ abi: 'erc20:decimals', calls: issued })
     for (let i = 0; i < issued.length; i++) {
       const totalSupply = await api.multiCall({ abi: 'erc20:balanceOf', target: issued[i], calls: unreleased })

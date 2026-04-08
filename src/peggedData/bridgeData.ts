@@ -1715,6 +1715,38 @@ export default {
     bridge: "elixir",
     sourceChain: formattedSourceChains.eth,
   },
+  "YUYAiJo8KVbnc6Fb6h3MnH2VGND4uGWDH4iLnw7DLEu": {
+    bridge: "layerzero",
+    sourceChain: formattedSourceChains.eth,
+  },
+  "25c5de5f5b286073c593edfd77b48abc7a48e5a4f3d4cd9d428ff93555534454": {
+    bridge: "wan",
+    sourceChain: formattedSourceChains.eth,
+  },
+  "25c5de5f5b286073c593edfd77b48abc7a48e5a4f3d4cd9d428ff93555534443": {
+    bridge: "wan",
+    sourceChain: formattedSourceChains.eth,
+  },
+  "25c5de5f5b286073c593edfd77b48abc7a48e5a4f3d4cd9d428ff9355059555344": {
+    bridge: "wan",
+    sourceChain: formattedSourceChains.eth,
+  },
+  "25c5de5f5b286073c593edfd77b48abc7a48e5a4f3d4cd9d428ff93545555243": {
+    bridge: "wan",
+    sourceChain: formattedSourceChains.eth,
+  },
+  "25c5de5f5b286073c593edfd77b48abc7a48e5a4f3d4cd9d428ff935444149": {
+    bridge: "wan",
+    sourceChain: formattedSourceChains.eth,
+  },
+  "1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378": {
+    bridge: "circle",
+    sourceChain: formattedSourceChains.eth,
+  },
+  "SP120SBRBQJ00MCWS7TM5R8WJNTTKD5K0HFRC2CNE.usdcx": {
+    bridge: "circle",
+    sourceChain: formattedSourceChains.eth,
+  },
 } as BridgeMapping;
 
 export const bridgeInfo = {
@@ -1947,5 +1979,13 @@ export const bridgeInfo = {
   elixir: {
     name: "Elixir Bridge",
     link: "https://bridge.elixir.xyz/",
+  },
+  layerzero: {
+    name: "LayerZero",
+    link: "https://layerzero.network/",
+  },
+  circle: {
+    name: "Circle xReserve",
+    link: "https://www.circle.com/",
   },
 } as BridgeInfo;

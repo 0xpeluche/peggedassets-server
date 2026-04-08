@@ -4,36 +4,68 @@ export const normalizedChainReplacements = {
   kucoin: "kcc",
   gnosis: "xdai",
   avalanche: 'avax',
-  "terra%20classic": "terra",
   sxnetwork: "sx",
-  "arbitrum%20nova": "arbitrum_nova",
   ethereumpow: "ethpow",
-  "milkomeda%20c1": "milkomeda",
-  "zksync%20lite": "zksync",
-  "zksync%20era": "era",
-  "polygon%20zkevm": "polygon_zkevm",
   multiversx: "elrond",
   rootstock: "rsk",
-  "terra classic": "terra",
-  "nova network": "nova",
   "godwokenv1": "godwoken_v1",
-  "arbitrum nova": "arbitrum_nova",
-  "zksync era": "era",
-  "polygon zkevm": "polygon_zkevm",
   "eos evm": "eos_evm",
   "oasys": "oas",
   "map relay chain": "map",
   "pulsechain": "pulse",
   "opbnb": "op_bnb",
-  "bifrost network": "bfc",
-  "horizen eon": "eon",
   "bahamut": "ftn",
   viction: "tomochain",
   "bitnet": "btn",
-  "defichain evm": "defichain_evm",
   "hydration": "hydradx",
   "bitlayer": "btr",
   "kaia": "klaytn",
+  "movement": "move",
+  "xrpl": "ripple",
+  "zksync era": "era",
+  "zksync%20era": "era",
+  "zksync-era": "era",
+  "horizen eon": "eon",
+  "horizen%20eon": "eon",
+  "horizen-eon": "eon",
+  "bifrost network": "bfc",
+  "bifrost%20network": "bfc",
+  "bifrost-network": "bfc",
+  "defichain evm": "defichain_evm",
+  "defichain%20evm": "defichain_evm",
+  "defichain-evm": "defichain_evm",
+  "arbitrum nova": "arbitrum_nova",
+  "arbitrum%20nova": "arbitrum_nova",
+  "arbitrum-nova": "arbitrum_nova",
+  "nova network": "nova",
+  "nova%20network": "nova",
+  "nova-network": "nova",
+  "zksync%20lite": "zksync",
+  "zksync lite": "zksync",
+  "zksync-lite": "zksync",
+  "milkomeda%20c1": "milkomeda",
+  "milkomeda c1": "milkomeda",
+  "milkomeda-c1": "milkomeda",
+  "polygon zkevm": "polygon_zkevm",
+  "polygon-zkevm": "polygon_zkevm",
+  "polygon%20zkevm": "polygon_zkevm",
+  "terra%20classic": "terra",
+  "terra classic": "terra",
+  "terra-classic": "terra",
+  "hyperliquid%20l1": "hyperliquid",
+  "hyperliquid l1": "hyperliquid",
+  "hyperliquid-l1": "hyperliquid",
+  "op%20mainnet": "optimism",
+  "op mainnet": "optimism",
+  "op-mainnet": "optimism",
+  "x%20layer": "xlayer",
+  "x layer": "xlayer",
+  "x-layer": "xlayer",
+  "plume%20mainnet": "plume_mainnet",
+  "plume mainnet": "plume_mainnet",
+  "plume-mainnet": "plume_mainnet",
+  "etherlink": "etlk",
+  "redbelly": "rbn"
 } as {
   [chain: string]: string;
 };
@@ -88,7 +120,7 @@ export const chainCoingeckoIds = {
     categories: ["EVM"],
     chainId: 11297108109,
   },
-  Optimism: {
+  "OP Mainnet": {
     geckoId: null,
     symbol: null,
     cmcId: null,
@@ -870,7 +902,7 @@ export const chainCoingeckoIds = {
     cmcId: null,
     categories: ["EVM"],
   },
-  Ripple: {
+  XRPL: {
     geckoId: "ripple",
     symbol: "XRP",
     cmcId: "52",
@@ -903,7 +935,7 @@ export const chainCoingeckoIds = {
     symbol: "APT",
     cmcId: "21794",
   },
-  "zkSync Era": {
+  "ZKsync Era": {
     geckoId: null,
     symbol: null,
     cmcId: null,
@@ -1085,10 +1117,10 @@ export const chainCoingeckoIds = {
     categories: ["EVM"],
     chainId: 41923,
   },
-  "Hyperliquid": {
-    geckoId: null,
-    symbol: null,
-    cmcId: null,
+  "Hyperliquid L1": {
+    geckoId: "hyperliquid",
+    symbol: "HYPE",
+    cmcId: "32196",
     categories: ["EVM"],
   },
   "Sonic": {
@@ -1136,6 +1168,77 @@ export const chainCoingeckoIds = {
     },
     chainId: 50104,
   },
+  "Movement": {
+    geckoId: "movement",
+    symbol: "MOVE",
+    cmcId: "32452",
+    categories: ["EVM", "Rollup"],
+    parent: {
+      chain: "Ethereum",
+      types: ["L2"]
+    },
+    chainId: 3073,
+    twitter: "movementlabsxyz",
+    url: "https://movementlabs.xyz/",
+  }, 
+  "Plume Mainnet": {
+    geckoId: "plume",
+    symbol: "PLUME",
+    cmcId: "35364",
+    categories: ["EVM"],
+    chainId: 98866,
+    twitter: "plumenetwork",
+    url: "https://plume.org/",
+  },
+  "Provenance": {
+    geckoId: null,
+    symbol: null,
+    cmcId: null,
+    categories: ["Cosmos"],
+  },
+  "Nero": {
+    geckoId: null,
+    symbol: "NERO",
+    cmcId: null,
+    categories: ["EVM"],
+    chainId: 1689,
+    twitter: "Nerochain_io",
+    url: "https://nerochain.io/",
+  },
+  "Glue": {
+    geckoId: "glue-2",
+    symbol: "GLUE",
+    cmcId: "36045",
+    categories: ["EVM"],
+    chainId: 1300,
+    twitter: "GlueNet",
+    url: "https://glue.net/",
+  },
+  "Etherlink": {
+    geckoId: null,
+    symbol: null,
+    cmcId: null,
+  },
+  "Redbelly": {
+    geckoId: "redbelly-network-token",
+    symbol: "RBNT",
+    cmcId: null,
+  },
+  "MegaETH": {
+    geckoId: "megaeth ",
+    symbol: "MEGA",
+    cmcId: null,
+  },
+  "Chia": {
+    geckoId: "chia",
+    symbol: "XCH",
+    cmcId: "9258",
+  },
+  "TAC": {
+    geckoId: "tac",
+    symbol: "TAC",
+    cmcId: null,
+  },
 } as {
   [chain: string]: {
     geckoId: string | null;
@@ -1151,7 +1254,11 @@ chainCoingeckoIds["Cosmos"] = chainCoingeckoIds["CosmosHub"];
 chainCoingeckoIds["Elrond"] = chainCoingeckoIds["MultiversX"];
 chainCoingeckoIds["RSK"] = chainCoingeckoIds["Rootstock"];
 chainCoingeckoIds["Klaytn"] = chainCoingeckoIds["Kaia"];
-chainCoingeckoIds["TomoChain"] = chainCoingeckoIds["Viction"]
+chainCoingeckoIds["TomoChain"] = chainCoingeckoIds["Viction"];
+chainCoingeckoIds["Move"] = chainCoingeckoIds["Movement"];
+chainCoingeckoIds["Hyperliquid"] = chainCoingeckoIds["Hyperliquid L1"];
+chainCoingeckoIds["Optimism"] = chainCoingeckoIds["OP Mainnet"];
+chainCoingeckoIds["Ripple"] = chainCoingeckoIds["XRPL"];
 
 export const extraSections = [
   "staking",
@@ -1181,6 +1288,16 @@ export function transformNewChainName(chain: string) {
       return "Kaia";
     case "TomoChain":
       return "Viction";
+    case "MOVE":
+      return "Movement";
+    case "Hyperliquid":
+      return "Hyperliquid L1";
+    case "Optimism":
+      return "OP Mainnet";
+    case "zkSync Era":
+      return "ZKsync Era";
+    case "Ripple":
+      return "XRPL";
     default:
       return chain;
   }
@@ -1361,7 +1478,7 @@ export function getChainDisplayName(
     case "canto":
       return "Canto";
     case "ripple":
-      return "Ripple";
+      return useNewChainNames ? "XRPL" : "Ripple";
     case "arbitrum_nova":
       return "Arbitrum Nova";
     case "kujira":
@@ -1373,7 +1490,7 @@ export function getChainDisplayName(
     case "zksync":
       return "zkSync Lite";
     case "era":
-      return "zkSync Era";
+      return useNewChainNames ? "ZKsync Era" : "zkSync Era" ;
     case "polygon_zkevm":
       return "Polygon zkEVM";
     case "base":
@@ -1430,8 +1547,30 @@ export function getChainDisplayName(
       return "Ink"
     case "sophon":
       return "Sophon"
-        ;
-      
+    case "move":
+      return useNewChainNames ? "Movement" : "Move"
+    case "plume_mainnet":
+      return "Plume Mainnet"
+    case "hyperliquid":
+      return useNewChainNames ? "Hyperliquid L1" : "Hyperliquid"
+    case "optimism":
+      return useNewChainNames ? "OP Mainnet" : "Optimism" 
+    case "provenance":
+      return "Provenance"
+    case "nero":
+      return "Nero"
+    case "glue":
+      return "Glue"
+    case "etlk":
+      return "Etherlink"
+    case "rbn":
+      return "Redbelly"
+    case "megaeth":
+      return "MegaETH"
+    case "chia":
+      return "Chia"
+    case "tac":
+      return "TAC"
     default:
       return (
         normalizedChain.slice(0, 1).toUpperCase() + normalizedChain.slice(1)

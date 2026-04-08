@@ -1,20 +1,32 @@
 const sdk = require("@defillama/sdk");
 import { lookupAccountByID } from "../helper/algorand";
-import { getTotalSupply as aptosGetTotalSupply } from "../helper/aptos";
+import { getTotalSupply as aptosGetTotalSupply, function_view } from "../helper/aptos";
+import { getTotalSupply } from "../helper/cardano";
 import {
   sumMultipleBalanceFunctions,
-  sumSingleBalance
+  sumSingleBalance,
 } from "../helper/generalUtil";
-import { bridgedSupply, chainMinted, chainUnreleased, cosmosSupply, kujiraSupply, osmosisSupply, solanaMintedOrBridged, supplyInArbitrumBridge, supplyInEthereumBridge, terraSupply } from "../helper/getSupply";
+import {
+  bridgedSupply,
+  cosmosSupply,
+  fogoMintedOrBridged,
+  osmosisSupply,
+  solanaMintedOrBridged,
+  supplyInArbitrumBridge,
+  supplyInEthereumBridge,
+  terraSupply
+} from "../helper/getSupply";
 import { getTotalSupply as kavaGetTotalSupply } from "../helper/kava";
 import { mixinSupply } from "../helper/mixin";
 import { call as nearCall } from "../helper/near";
+import { call as nibiruCall } from "../helper/nibiru";
 import {
   getBalance as ontologyGetBalance,
   getTotalSupply as ontologyGetTotalSupply,
 } from "../helper/ontology";
 import { getTokenBalance as solanaGetTokenBalance } from "../helper/solana";
 import * as sui from "../helper/sui";
+import * as starknet from "../helper/starknet";
 import {
   getTotalSupply as tronGetTotalSupply, // NOTE THIS DEPENDENCY
 } from "../helper/tron";
@@ -53,14 +65,52 @@ Juno, Crescent: missing Axelar bridged, no simple API to use, maybe can use axel
 Sifchain: not sure where it's coming from/how to track
 */
 
-async function solanaUnreleased() {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+async function chainMinted(chain: string, decimals: number) {
+  return async function (_: any, _1: any, chainBlocks: ChainBlocks) {
     let balances = {} as Balances;
-    for(let unreleasedAddress of chainContracts["solana"].unreleased){
+    for (let issued of chainContracts[chain].issued) {
+      const totalSupply = (
+        await sdk.api.abi.call({
+          abi: "erc20:totalSupply",
+          target: issued,
+          block: chainBlocks?.[chain],
+          chain: chain,
+        })
+      ).output;
+      sumSingleBalance(
+        balances,
+        "peggedUSD",
+        totalSupply / 10 ** decimals,
+        "issued",
+        false
+      );
+    }
+    return balances;
+  };
+}
+
+async function chainUnreleased(chain: string, decimals: number, owner: string) {
+  return async function (_: any, _1: any, chainBlocks: ChainBlocks) {
+    let balances = {} as Balances;
+    for (let issued of chainContracts[chain].issued) {
+      const reserve = (
+        await sdk.api.erc20.balanceOf({
+          target: issued,
+          owner: owner,
+          block: chainBlocks?.[chain],
+          chain: chain,
+        })
+      ).output;
+      sumSingleBalance(balances, "peggedUSD", reserve / 10 ** decimals);
+    }
+    return balances;
+  };
+}
+
+async function solanaUnreleased() {
+  return async function () {
+    let balances = {} as Balances;
+    for (let unreleasedAddress of chainContracts["solana"].unreleased) {
       sumSingleBalance(balances, "peggedUSD", await solanaGetTokenBalance(
         chainContracts["solana"].issued[0],
         unreleasedAddress
@@ -70,14 +120,10 @@ async function solanaUnreleased() {
   };
 }
 
-const getBal = (address:string)=>lookupAccountByID(address).then(r=>r.account.assets.find((t:any)=>t["asset-id"]==31566704).amount / 10 ** 6)
+const getBal = (address: string) => lookupAccountByID(address).then(r => r.account.assets.find((t: any) => t["asset-id"] == 31566704).amount / 10 ** 6)
 async function algorandMinted() {
   // I gave up on trying to use the SDK for this
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const supplyRes = await retry(
       async (_bail: any) =>
@@ -94,19 +140,15 @@ async function algorandUnreleased() {
   return async function () {
     let balances = {} as Balances;
 
-    sumSingleBalance(balances, "peggedUSD", 
-    (await getBal("OSS3CEB3KK2QGVW4DZYMHLDJMJIY7WKFQCPXV7KOZCGF6GPILAARBOGZHM")) + 
-    (await getBal("SO6ZNE255CHM56JNA6SYDAKIMHC266DGM4G47O6N66UT57HZZ7VV6Y2N7Y")));
+    sumSingleBalance(balances, "peggedUSD",
+      (await getBal("OSS3CEB3KK2QGVW4DZYMHLDJMJIY7WKFQCPXV7KOZCGF6GPILAARBOGZHM")) +
+      (await getBal("SO6ZNE255CHM56JNA6SYDAKIMHC266DGM4G47O6N66UT57HZZ7VV6Y2N7Y")));
     return balances;
   };
 }
 
 async function tronMinted() {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const totalSupply = await tronGetTotalSupply(
       chainContracts["tron"].issued[0]
@@ -117,11 +159,7 @@ async function tronMinted() {
 }
 
 async function hederaMinted() {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const issuance = await retry(
       async (_bail: any) =>
@@ -137,11 +175,7 @@ async function hederaMinted() {
 }
 
 async function circleAPIChainMinted(chain: string) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const issuance = await retry(
       async (_bail: any) =>
@@ -165,15 +199,20 @@ async function suiMinted(): Promise<Balances> {
     "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC"
   );
   sumSingleBalance(balances, "peggedUSD", supply, 'issued', false);
-        return balances;
+  return balances;
+}
+
+async function starknetMinted(): Promise<Balances> {
+  let balances = {} as Balances;
+  for (let issued of chainContracts.starknet.issued) {
+    const supply = await starknet.getTotalSupply(issued);
+    sumSingleBalance(balances, "peggedUSD", supply, 'issued', false);
+  }
+  return balances;
 }
 
 async function suiBridged(chain: string) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const res = await axios.get(
       `https://kx58j6x5me.execute-api.us-east-1.amazonaws.com/sui/usdc`
@@ -193,11 +232,7 @@ async function suiBridged(chain: string) {
 }
 
 async function reinetworkBridged(address: string, decimals: number) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const res = await retry(
       async (_bail: any) =>
@@ -213,11 +248,7 @@ async function reinetworkBridged(address: string, decimals: number) {
 }
 
 async function karuraMinted(address: string, decimals: number) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const res = await retry(
       async (_bail: any) =>
@@ -239,11 +270,7 @@ async function karuraMinted(address: string, decimals: number) {
 }
 
 async function ontologyBridged() {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const polyUSDCAddress = chainContracts.ontology.bridgedFromETH[0];
     const polyUSDCReserveAddress = chainContracts.ontology.unreleased[0];
@@ -278,11 +305,7 @@ async function ontologyBridged() {
 }
 
 async function nearBridged(address: string, decimals: number) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const supply = await nearCall(address, "ft_total_supply");
     sumSingleBalance(
@@ -297,11 +320,7 @@ async function nearBridged(address: string, decimals: number) {
 }
 
 async function nearMint(address: string, decimals: number) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const mintedAmount = await nearCall(address, "ft_total_supply");
     sumSingleBalance(
@@ -316,11 +335,7 @@ async function nearMint(address: string, decimals: number) {
 }
 
 async function elrondBridged(tokenID: string, decimals: number) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const res = await retry(
       async (_bail: any) =>
@@ -341,11 +356,7 @@ async function elrondBridged(tokenID: string, decimals: number) {
 }
 
 async function kavaBridged() {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     for (const contract of chainContracts.kava.bridgedFromETH) {
       const totalSupply = await kavaGetTotalSupply(contract);
@@ -356,11 +367,7 @@ async function kavaBridged() {
 }
 
 async function aptosBridged() {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const contractStargate =
       "0xf22bede237a07e121b56d91a491eb7bcdfd1f5907926a9e58338f964a01b17fa";
@@ -397,11 +404,7 @@ async function aptosBridged() {
 }
 
 async function injectiveBridged() {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     const issuance = await retry(async (_bail: any) =>
       axios.get("https://injective-nuxt-api.vercel.app/api/tokens")
     );
@@ -420,11 +423,7 @@ async function injectiveBridged() {
 }
 
 async function flowBridged(address: string, decimals: number) {
-  return async function (
-    _timestamp: number,
-    _ethBlock: number,
-    _chainBlocks: ChainBlocks
-  ) {
+  return async function () {
     let balances = {} as Balances;
     const res = await retry(
       async (_bail: any) =>
@@ -439,22 +438,130 @@ async function flowBridged(address: string, decimals: number) {
   };
 }
 
+async function moveSupply(): Promise<Balances> {
+  const balances = {} as Balances;
+
+  const resp = await function_view({
+    functionStr: '0x1::fungible_asset::supply',
+    type_arguments: ['0x1::object::ObjectCore'],
+    args: [chainContracts.move.bridgedFromETH[0]],
+  });
+  balances["peggedUSD"] = Number(resp.vec[0]) / 1e6;
+
+  return balances;
+}
+
+async function getCardanoSupply() {
+  return async function () {
+    let balances = {} as Balances;
+    for (const asset of chainContracts.cardano.bridgedFromETH) {
+      const supply = await getTotalSupply(asset);
+      sumSingleBalance(balances, "peggedUSD", supply, asset, true);
+    }
+    return balances;
+  };
+}
+
+async function rippleMinted() {
+  return async function () {
+    const balances = {} as Balances;
+
+    const NODE_URL = "https://xrplcluster.com";
+
+    // Get the USDC token info from config
+    const usdcToken = chainContracts.ripple.issued[0]; // "5553444300000000000000000000000000000000.rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE"
+    const [currencyCode, issuerAddress] = usdcToken.split('.');
+
+    const payload = {
+      method: "gateway_balances",
+      params: [
+        {
+          account: issuerAddress,
+          ledger_index: "validated",
+        },
+      ],
+    };
+
+    const res = await retry(async (_bail: any) => axios.post(NODE_URL, payload));
+
+    if (res.data.result && res.data.result.obligations && res.data.result.obligations[currencyCode]) {
+      const supplyStr = res.data.result.obligations[currencyCode];
+      const supply = parseFloat(supplyStr); // XRPL API returns value in correct decimal format
+
+      sumSingleBalance(balances, "peggedUSD", supply, "issued", false);
+    }
+
+    return balances;
+  };
+}
+
+async function nibiruBridged() {
+  return async function () {
+    const balances = {} as Balances;
+
+    for (const contract of chainContracts.nibiru.bridgedFromETH) {
+      const totalSupply = await nibiruCall({
+        target: contract,
+        abi: { name: 'totalSupply' }
+      });
+
+      // Convert from hex to number and divide by 1e6 (USDC has 6 decimals)
+      const supply = parseInt(totalSupply, 16) / 1e6;
+      sumSingleBalance(balances, "peggedUSD", supply, contract, true);
+    }
+
+    return balances;
+  };
+}
+
+async function stacksBridged() {
+  return async function () {
+    const balances = {} as Balances;
+    for (const contract of chainContracts.stacks.bridgedFromETH) {
+      const res = await retry(
+        async (_bail: any) =>
+          await axios.get(
+            `https://api.hiro.so/metadata/v1/ft/${encodeURIComponent(contract)}`
+          )
+      );
+      const totalSupply = res?.data?.total_supply;
+      const decimals = res?.data?.decimals ?? 6;
+      if (totalSupply) {
+        const supply = Number(totalSupply) / 10 ** decimals;
+        sumSingleBalance(balances, "peggedUSD", supply, contract, true);
+      }
+    }
+    return balances;
+  };
+}
 
 const adapter: PeggedIssuanceAdapter = {
   ethereum: {
-    minted: chainMinted(chainContracts.ethereum.issued, 6),
-    unreleased: chainUnreleased(chainContracts.ethereum.issued, 6 ,chainContracts.ethereum.unreleased[0]),
-    // solana: bridgedSupply(
-    //   "ethereum",
-    //   6,
-    //   chainContracts.ethereum.bridgedFromSol
-    // ),
-    polygon: bridgedSupply("ethereum", 6, chainContracts.ethereum.bridgedFromPolygon),
+    minted: chainMinted("ethereum", 6),
+    unreleased: chainUnreleased(
+      "ethereum",
+      6,
+      chainContracts.ethereum.unreleased[0]
+    ),
+    solana: bridgedSupply(
+      "ethereum",
+      6,
+      chainContracts.ethereum.bridgedFromSol
+    ),
+    polygon: bridgedSupply(
+      "ethereum",
+      6,
+      chainContracts.ethereum.bridgedFromPolygon
+    ),
     bsc: bridgedSupply("ethereum", 18, chainContracts.ethereum.bridgedFromBSC),
   },
   polygon: {
-    minted: chainMinted(chainContracts.polygon.issued, 6),
-    ethereum: bridgedSupply("polygon", 6, chainContracts.polygon.bridgedFromETH),
+    minted: chainMinted("polygon", 6),
+    ethereum: bridgedSupply(
+      "polygon",
+      6,
+      chainContracts.polygon.bridgedFromETH
+    ),
     solana: bridgedSupply("polygon", 6, chainContracts.polygon.bridgedFromSol),
   },
   solana: {
@@ -466,6 +573,9 @@ const adapter: PeggedIssuanceAdapter = {
     avax: solanaMintedOrBridged(chainContracts.solana.bridgedFromAvax),
     celo: solanaMintedOrBridged(chainContracts.solana.bridgedFromCelo),
     fantom: solanaMintedOrBridged(chainContracts.solana.bridgedFromFantom),
+  },
+  fogo: {
+    solana: fogoMintedOrBridged(chainContracts.fogo.bridgedFromSol),
   },
   bsc: {
     ethereum: sumMultipleBalanceFunctions(
@@ -480,7 +590,7 @@ const adapter: PeggedIssuanceAdapter = {
     avax: bridgedSupply("bsc", 6, chainContracts.bsc.bridgedFromAvax),
   },
   avax: {
-    minted:chainMinted(chainContracts.avax.issued, 6),
+    minted: chainMinted("avax", 6),
     ethereum: bridgedSupply("avax", 6, chainContracts.avax.bridgedFromETH),
     solana: bridgedSupply("avax", 6, chainContracts.avax.bridgedFromSol),
     bsc: bridgedSupply("avax", 18, chainContracts.avax.bridgedFromBSC),
@@ -496,12 +606,16 @@ const adapter: PeggedIssuanceAdapter = {
   },
   */
   arbitrum: {
-    minted: chainMinted(chainContracts.arbitrum.issued, 6),
+    minted: chainMinted("arbitrum", 6),
     unreleased: async () => ({}),
-    ethereum: bridgedSupply("arbitrum", 6, chainContracts.arbitrum.bridgedFromETH),
+    ethereum: bridgedSupply(
+      "arbitrum",
+      6,
+      chainContracts.arbitrum.bridgedFromETH
+    ),
   },
   era: {
-    minted: chainMinted(chainContracts.era.issued, 6),
+    minted: chainMinted("era", 6),
     unreleased: async () => ({}),
     ethereum: bridgedSupply("era", 6, chainContracts.era.bridgedFromETH),
   },
@@ -539,8 +653,12 @@ const adapter: PeggedIssuanceAdapter = {
     ethereum: bridgedSupply("boba", 6, chainContracts.boba.bridgedFromETH),
   },
   optimism: {
-    minted: chainMinted(chainContracts.optimism.issued, 6),
-    ethereum: bridgedSupply("optimism", 6, chainContracts.optimism.bridgedFromETH),
+    minted: chainMinted("optimism", 6),
+    ethereum: bridgedSupply(
+      "optimism",
+      6,
+      chainContracts.optimism.bridgedFromETH
+    ),
   },
   metis: {
     ethereum: bridgedSupply("metis", 6, chainContracts.metis.bridgedFromETH),
@@ -632,7 +750,7 @@ const adapter: PeggedIssuanceAdapter = {
   stellar: {
     minted: circleAPIChainMinted("XLM"),
   },
-  
+
   xdai: {
     ethereum: bridgedSupply("xdai", 6, chainContracts.xdai.bridgedFromETH),
   },
@@ -640,7 +758,13 @@ const adapter: PeggedIssuanceAdapter = {
     ethereum: bridgedSupply("theta", 6, chainContracts.theta.bridgedFromETH),
   },
   rsk: {
-    ethereum: bridgedSupply("rsk", 18, chainContracts.rsk.bridgedFromETH),
+    ethereum: sumMultipleBalanceFunctions(
+      [
+        bridgedSupply("rsk", 6, chainContracts.rsk.bridgedFromETH6Decimals),
+        bridgedSupply("rsk", 18, chainContracts.rsk.bridgedFromETH18Decimals),
+      ],
+      "peggedUSD"
+    ),
   },
   reinetwork: {
     ethereum: reinetworkBridged(chainContracts.reinetwork.bridgedFromETH[0], 6),
@@ -671,7 +795,7 @@ const adapter: PeggedIssuanceAdapter = {
     ethereum: bridgedSupply("dfk", 18, chainContracts.dfk.bridgedFromETH),
   },
   celo: {
-    minted: chainMinted(chainContracts.celo.issued, 6),
+    minted: chainMinted("celo", 6),
     ethereum: sumMultipleBalanceFunctions(
       [
         bridgedSupply("celo", 6, chainContracts.celo.bridgedFromETH6Decimals),
@@ -688,10 +812,11 @@ const adapter: PeggedIssuanceAdapter = {
   },
   karura: {
     ethereum: karuraMinted(chainContracts.karura.bridgedFromETH[0], 6),
-  } /*
+  },
+  /*
   ontology: {
     ethereum: ontologyBridged(),
-  },*/,
+  },*/
   sx: {
     ethereum: bridgedSupply("sx", 6, chainContracts.sx.bridgedFromETH),
   },
@@ -774,13 +899,13 @@ const adapter: PeggedIssuanceAdapter = {
     ),
   },
   base: {
-    minted: chainMinted(chainContracts.base.issued, 6),
+    minted: chainMinted("base", 6),
     ethereum: bridgedSupply("base", 6, chainContracts.base.bridgedFromETH),
   },
-  kujira: {
-    ethereum: kujiraSupply(chainContracts.kujira.bridgedFromETH, 6, "Axelar"),
-    noble: kujiraSupply(chainContracts.kujira.bridgedFromNoble, 6, "Noble"),
-  },
+  /* kujira: {
+     ethereum: kujiraSupply(chainContracts.kujira.bridgedFromETH, 6, "Axelar"),
+     noble: kujiraSupply(chainContracts.kujira.bridgedFromNoble, 6, "Noble"),
+   },*/
   waves: {
     ethereum: supplyInEthereumBridge(
       chainContracts.ethereum.issued[0],
@@ -796,6 +921,7 @@ const adapter: PeggedIssuanceAdapter = {
     arbitrum: suiBridged("ARBITRUM_BRIDGED"),
   },
   starknet: {
+    minted: starknetMinted,
     ethereum: supplyInEthereumBridge(
       chainContracts.ethereum.issued[0],
       chainContracts.starknet.bridgeOnETH[0],
@@ -810,7 +936,7 @@ const adapter: PeggedIssuanceAdapter = {
   },
   pulse: {
     ethereum: bridgedSupply("pulse", 6, chainContracts.pulse.bridgedFromETH),
-  },  
+  },
   imx: {
     ethereum: supplyInEthereumBridge(
       chainContracts.ethereum.issued[0],
@@ -834,7 +960,7 @@ const adapter: PeggedIssuanceAdapter = {
     ethereum: bridgedSupply("mantle", 6, chainContracts.mantle.bridgedFromETH),
   },
   linea: {
-    ethereum: bridgedSupply("linea", 6, chainContracts.linea.bridgedFromETH),
+    minted: chainMinted("linea", 6),
   },
   injective: {
     noble: cosmosSupply('injective', ['ibc/2CBC2EA121AE42563B08028466F37B600F2D7D4282342DE938283CC3FB2BC00E'], 6, 'noble'),
@@ -843,7 +969,7 @@ const adapter: PeggedIssuanceAdapter = {
     minted: circleAPIChainMinted("NOBLE"),
   },
   flow: {
-    ethereum: bridgedSupply("flow",6,chainContracts.flow.bridgedFromETH),
+    ethereum: bridgedSupply("flow", 6, chainContracts.flow.bridgedFromETH),
   },
   polkadot: {
     minted: circleAPIChainMinted("PAH"),
@@ -859,6 +985,7 @@ const adapter: PeggedIssuanceAdapter = {
     ethereum: bridgedSupply("occ", 6, chainContracts.occ.bridgedFromETH),
   },
   hyperliquid: {
+    minted: chainMinted("hyperliquid", 6),
     arbitrum: supplyInArbitrumBridge(
       chainContracts.arbitrum.issued[0],
       chainContracts.hyperliquid.bridgeOnARB[0],
@@ -866,13 +993,14 @@ const adapter: PeggedIssuanceAdapter = {
     ),
   },
   sonic: {
-    ethereum: bridgedSupply("sonic", 6, chainContracts.sonic.bridgedFromETH),
+    minted: chainMinted("sonic", 6),
+  //  ethereum: bridgedSupply("sonic", 6, chainContracts.sonic.bridgedFromETH), fix wrongly assigned as bridged
   },
   soneium: {
     ethereum: bridgedSupply("soneium", 6, chainContracts.soneium.bridgedFromETH),
   },
   unichain: {
-    minted: chainMinted(chainContracts.unichain.issued, 6),
+    minted: chainMinted("unichain", 6),
   },
   superposition: {
     ethereum: bridgedSupply("spn", 6, chainContracts.superposition.bridgedFromETH),
@@ -887,7 +1015,7 @@ const adapter: PeggedIssuanceAdapter = {
     ethereum: bridgedSupply("zircuit", 6, chainContracts.zircuit.bridgedFromETH),
   },
   wc: {
-    ethereum: bridgedSupply("wc", 6, chainContracts.wc.bridgedFromETH),
+    minted: chainMinted("wc", 6),
   },
   shape: {
     ethereum: bridgedSupply("shape", 6, chainContracts.shape.bridgedFromETH),
@@ -907,9 +1035,9 @@ const adapter: PeggedIssuanceAdapter = {
   wemix: {
     ethereum: bridgedSupply("wemix", 6, chainContracts.wemix.bridgedFromETH),
   },
-  kroma: {
+/*   kroma: {
     ethereum: bridgedSupply("kroma", 6, chainContracts.kroma.bridgedFromETH),
-  },
+  }, */
   berachain: {
     ethereum: bridgedSupply("berachain", 6, chainContracts.berachain.bridgedFromETH),
   },
@@ -924,12 +1052,17 @@ const adapter: PeggedIssuanceAdapter = {
   },
   bob: {
     ethereum: bridgedSupply("bob", 6, chainContracts.bob.bridgedFromETH),
-  },  
+  },
   ink: {
+    minted: chainMinted("ink", 6),
     ethereum: bridgedSupply("ink", 6, chainContracts.ink.bridgedFromETH, "stargate"),
-  }, 
+  },
+  nibiru: {
+    ethereum: nibiruBridged(),
+  },
   sei: {
     noble: bridgedSupply("sei", 6, chainContracts.sei.bridgedFromNoble),
+    minted: circleAPIChainMinted("SEI"),
   },
   corn: {
     ethereum: bridgedSupply("corn", 6, chainContracts.corn.bridgedFromETH),
@@ -944,8 +1077,9 @@ const adapter: PeggedIssuanceAdapter = {
     ethereum: bridgedSupply("flare", 6, chainContracts.flare.bridgedFromETH, "stargate"),
   },
   xdc: {
+    minted: chainMinted("xdc", 6),
     ethereum: supplyInEthereumBridge(
-      chainContracts.ethereum.issued[0], 
+      chainContracts.ethereum.issued[0],
       chainContracts.xdc.bridgeOnETH[0],
       6
     ),
@@ -953,8 +1087,60 @@ const adapter: PeggedIssuanceAdapter = {
       chainContracts.arbitrum.issued[0],
       chainContracts.xdc.bridgeOnARB[0],
       6
-    ) 
-  }
+    )
+  },
+  move: {
+    ethereum: moveSupply,
+  },
+  hemi: {
+    ethereum: bridgedSupply("hemi", 6, chainContracts.hemi.bridgedFromETH, "stargate"),
+  },
+  plume_mainnet: {
+    minted: chainMinted("plume_mainnet", 6),
+    ethereum: bridgedSupply("plume_mainnet", 6, chainContracts.plume_mainnet.bridgedFromETH),
+  },
+  story: {
+    ethereum: bridgedSupply("sty", 6, chainContracts.story.bridgedFromETH, "stargate"),
+  },
+  nero: {
+    arbitrum: bridgedSupply("nero", 6, chainContracts.nero.bridgedFromARB, "VIA Labs"),
+  },
+  perennial: {
+    ethereum: bridgedSupply("perennial", 6, chainContracts.perennial.bridgedFromETH, "conduit"),
+  },
+  apechain: {
+    ethereum: bridgedSupply("apechain", 6, chainContracts.apechain.bridgedFromETH, "stargate"),
+  },
+  glue: {
+    ethereum: bridgedSupply("glue", 6, chainContracts.glue.bridgedFromETH, "stargate"),
+  },
+  goat: {
+    ethereum: bridgedSupply("goat", 6, chainContracts.goat.bridgedFromETH, "stargate"),
+  },
+  ripple: {
+    minted: rippleMinted(),
+  },
+  cardano: {
+    ethereum: getCardanoSupply(),
+  },
+  katana: {
+    ethereum: bridgedSupply("katana", 6, chainContracts.katana.bridgedFromETH),
+  },
+  monad: {
+    minted: chainMinted("monad", 6),
+  },
+  etlk: {
+    ethereum: bridgedSupply("etlk", 6, chainContracts.etlk.bridgedFromETH, "wab"), // Etherlink's Wrapped Asset Bridge
+  },
+  rbn: {
+    ethereum: bridgedSupply("rbn", 6, chainContracts.rbn.bridgedFromETH)
+  },
+  mantra: {
+    ethereum: bridgedSupply("mantra", 6, chainContracts.mantra.bridgedFromETH)
+  },
+  stacks: {
+    ethereum: stacksBridged(),
+  },
 };
 
 export default adapter;

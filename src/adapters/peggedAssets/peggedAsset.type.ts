@@ -21,7 +21,14 @@ export type PeggedAssetType =
   | "peggedCOP"
   | "peggedREAL"
   | "peggedRUB"
-  | "peggedAUD";
+  | "peggedPHP"
+  | "peggedMXN"
+  | "peggedAUD"
+  | "peggedKES"
+  | "peggedZAR"
+  | "peggedNGN"
+  | "peggedXOF"
+  | "peggedGHS";
 
 type StringNumber = string;
 type PeggedBalances = {

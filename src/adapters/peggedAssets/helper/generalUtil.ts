@@ -4,6 +4,8 @@ import type {
   Balances,
   PeggedAssetType
 } from "../peggedAsset.type";
+const axios = require("axios");
+const retry = require("async-retry");
 
 export function sumSingleBalance(
   balances: Balances,
@@ -133,4 +135,16 @@ function mergeBalances(
       }
     }
   }
+}
+
+
+let tetherTransperancyCache: any
+
+export function getTetherTransparency() {
+  if (!tetherTransperancyCache) 
+    tetherTransperancyCache = retry(
+      async (_bail: any) =>
+        await axios("https://app.tether.to/transparency.json")
+    ).then((res: any) => res.data)
+  return tetherTransperancyCache;
 }

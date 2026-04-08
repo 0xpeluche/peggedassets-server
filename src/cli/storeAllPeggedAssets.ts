@@ -1,7 +1,8 @@
+import * as sdk from "@defillama/sdk";
 import PromisePool from "@supercharge/promise-pool";
 import storePeggedAssets from "./../peggedAssets/storePeggedAssets/storePegged";
 import peggedAssets from "./../peggedData/peggedData";
-import * as sdk from "@defillama/sdk"
+
 const INTERNAL_CACHE_FILE = 'pegged-assets-cache/sdk-cache.json'
 
 const handler = async () => {
@@ -25,6 +26,7 @@ const handler = async () => {
       }
       // console.timeEnd(timeKey);
     })
+    
 };
 
 handler().catch(console.error).then(async () => {

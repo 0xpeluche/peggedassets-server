@@ -1,5 +1,5 @@
 import { sumSingleBalance } from "../helper/generalUtil";
-import { addChainExports } from "../helper/getSupply";
+import { addChainExports, solanaMintedOrBridged } from "../helper/getSupply";
 import * as sui from "../helper/sui";
 import { Balances, ChainContracts, PeggedIssuanceAdapter } from "../peggedAsset.type";
 
@@ -39,16 +39,49 @@ const chainContracts: ChainContracts = {
     issued: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
   },
   mantle: {
-    bridgedFromETH: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
+    issued: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
+  },
+  polygon: {
+    issued: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
+  },
+  arbitrum: {
+    issued: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
+  },
+  core: {
+    issued: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
+  },
+  bsc: {
+    issued: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
+  },
+  imx: {
+    issued: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
+  },
+  "plume_mainnet": {
+    issued: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
+  },
+  solana: {
+    issued: ["AUSD1jCcCyPLybk1YnvPWsHQSrZ46dxwoMniN4N2UEB9"],
+  },
+  katana: {
+    issued: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
+  },
+  monad: {
+    issued: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
+  },
+  plasma: {
+    issued: ["0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"],
   },
 };
 
 
 const adapter: PeggedIssuanceAdapter = {
-  ...addChainExports(chainContracts, undefined, { decmials: 6, }),
+  ...addChainExports(chainContracts, undefined, { decimals: 6, }),
   sui: {
     minted: suiMinted,
     // unreleased: suiUnreleased,
+  },
+  solana: {
+    minted: solanaMintedOrBridged(chainContracts.solana.issued, "peggedUSD"),
   },
 };
 

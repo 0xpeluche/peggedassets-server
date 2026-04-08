@@ -5,6 +5,7 @@ type PegType =
   | "peggedSGD" //singapora
   | "peggedJPY" //japan
   | "peggedCNY" //china
+  | "peggedMXN" //mexican peso
   | "peggedUAH" //ukraine
   | "peggedARS" //ARGENTINE
   | "peggedGBP" //GB
@@ -15,7 +16,12 @@ type PegType =
   | "peggedCOP" //colombian peso
   | "peggedREAL"//brazilian real 
   | "peggedRUB" //russian ruble
-  | "peggedAUD"; //Australian currency
+  | "peggedAUD" //Australian currency
+  | "peggedKES" //Kenyan shilling
+  | "peggedZAR" //South African rand
+  | "peggedNGN" //Nigerian naira
+  | "peggedXOF" //West African CFA franc
+  | "peggedGHS"; //Ghanaian cedi
 
 type PegMechanism = "algorithmic" | "fiat-backed" | "crypto-backed";
 
@@ -50,6 +56,9 @@ export type PeggedAsset = {
   delisted?: boolean;
   deadFrom?: string;
   doublecounted?: boolean;
+  deprecated?: boolean;
+  yieldBearing?: boolean;
+  module?: string;  // adapter module to use, defaults to gecko_id if not set
 };
 
 type Bridge = {
