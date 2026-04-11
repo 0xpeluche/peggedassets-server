@@ -285,7 +285,7 @@ function upgrade(rec: DayRec, pt: string): DayRec {
 
   const meta      = (peggedData as any[]).find((m) => m.gecko_id === adapterName)!;
   const pt        = meta.pegType || "peggedUSD";
-  const adapter   = importAdapter(meta);
+  const adapter   = await importAdapter(meta);
   const stamps    = tsRange(start, end);
   const adapterId = meta.id;
 
